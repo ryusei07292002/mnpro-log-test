@@ -197,3 +197,22 @@ summary { cursor: pointer; font-weight: 800; color: var(--blue); padding: 8px 0;
   .add-oral-task { width: 100%; }
   .oral-task-grid { grid-template-columns: 1fr; }
 }
+
+/* v0.3.2: 入力項目整理・高確信誤答一覧 */
+.optional-details {
+  margin-top: 12px; padding-top: 4px; border-top: 1px dashed var(--border);
+}
+.high-confidence-section {
+  margin: 14px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft);
+}
+.high-confidence-errors { display: grid; gap: 12px; margin-top: 12px; }
+.high-confidence-item {
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.high-confidence-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
+}
+.high-confidence-empty { margin: 10px 0 0; }
+@media (max-width: 680px) {
+  .add-high-confidence-error { width: 100%; }
+}

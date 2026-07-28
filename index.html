@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="国試ログ">
   <meta name="description" content="医師国家試験Pro向けの当日学習ログ作成ツール">
+  <meta name="robots" content="noindex,nofollow,noarchive">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -18,7 +19,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.1</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.2</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -101,14 +102,10 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">日単位情報</p>
-            <h2>睡眠・集中度</h2>
+            <h2>日全体メモ</h2>
           </div>
         </div>
-        <div class="form-grid three">
-          <label>睡眠時間（時間）<input id="sleep-hours" type="number" inputmode="decimal" min="0" max="24" step="0.25" placeholder="任意"></label>
-          <label>集中度<select id="concentration"><option value="">未入力</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-          <label class="span-two">日全体メモ<textarea id="daily-note" rows="2" placeholder="体調、計画変更、学習できなかった理由など（任意）"></textarea></label>
-        </div>
+        <label>計画変更・学習できなかった理由など<textarea id="daily-note" rows="2" placeholder="必要な場合だけ入力してください（任意）"></textarea></label>
       </section>
 
       <section class="card">
@@ -179,12 +176,17 @@
         <label>科目<select data-field="subjectId"></select></label>
         <label>正式分野名<input data-field="field" type="text" placeholder="候補から選択、または入力"><datalist class="field-options"></datalist></label>
         <label>教材名<select data-field="materialName"></select></label>
-        <label>教材版<input data-field="materialVersion" type="text" placeholder="例：2026、最新版"></label>
         <label>演習区分<select data-field="exerciseTypeId"></select></label>
-        <label>QBモード<select data-field="qbMode"></select></label>
-        <label>問題範囲<input data-field="questionRange" type="text" placeholder="例：QB指定の1周目問題、問1〜20"></label>
-        <label>過去接触状況<select data-field="priorExposureStatusId"></select></label>
+        <label class="qb-mode-field">QBモード<select data-field="qbMode"></select></label>
       </div>
+
+      <details class="optional-details">
+        <summary>追加情報（必要な場合のみ）</summary>
+        <div class="form-grid">
+          <label>問題範囲<input data-field="questionRange" type="text" placeholder="例：QB指定の1周目問題、問1〜20"></label>
+          <label class="exposure-field">過去接触状況<select data-field="priorExposureStatusId"></select></label>
+        </div>
+      </details>
 
       <details class="result-details">
         <summary>演習結果（6分類）</summary>
@@ -196,9 +198,8 @@
           <label>推論ミス<input data-field="errorReasoning" type="number" inputmode="numeric" min="0"></label>
           <label>読み落とし<input data-field="errorReading" type="number" inputmode="numeric" min="0"></label>
           <label>その他誤答<input data-field="errorOther" type="number" inputmode="numeric" min="0"></label>
-          <label>高確信誤答数<input data-field="highConfidenceErrorCount" type="number" inputmode="numeric" min="0"></label>
-          <label>未演習問題数<input data-field="unattemptedQuestionCount" type="number" inputmode="numeric" min="0"></label>
-          <label>未演習正解数<input data-field="unattemptedCorrectCount" type="number" inputmode="numeric" min="0"></label>
+          <label class="unattempted-field">未演習問題数<input data-field="unattemptedQuestionCount" type="number" inputmode="numeric" min="0"></label>
+          <label class="unattempted-field">未演習正解数<input data-field="unattemptedCorrectCount" type="number" inputmode="numeric" min="0"></label>
           <label>所要時間（分）<input data-field="durationMinutes" type="number" inputmode="numeric" min="0"></label>
         </div>
         <div class="result-actions">
@@ -215,8 +216,19 @@
       </details>
 
       <details open>
-        <summary>欠損知識・口頭再生・Anki候補</summary>
+        <summary>欠損知識・高確信誤答・口頭再生</summary>
         <label>欠損知識（重要上位3項目、1行1項目）<textarea data-field="knowledgeGaps" rows="4" placeholder="1. ...&#10;2. ...&#10;3. ..."></textarea></label>
+        <section class="high-confidence-section">
+          <div class="subsection-heading">
+            <div>
+              <strong>高確信誤答</strong>
+              <p class="hint">正しいと思い込んで誤答した内容だけを登録します。件数は自動集計されます。</p>
+            </div>
+            <button class="add-high-confidence-error secondary" type="button">＋高確信誤答</button>
+          </div>
+          <div class="high-confidence-errors"></div>
+          <p class="high-confidence-empty hint">高確信誤答は未登録です。</p>
+        </section>
         <section class="oral-recall-section">
           <div class="subsection-heading">
             <div>
@@ -228,10 +240,21 @@
           <div class="oral-recall-tasks"></div>
           <p class="oral-recall-empty hint">口頭再生課題は未登録です。</p>
         </section>
-        <label>Anki候補<textarea data-field="ankiCandidates" rows="3" placeholder="候補だけを記録。新規・修正・不採用はChatGPTが判断します。"></textarea></label>
-        <label>自由メモ<textarea data-field="notes" rows="3" placeholder="状態、教材確認事項、次回注意点など"></textarea></label>
+        <label>このブロックの補足<textarea data-field="notes" rows="3" placeholder="教材確認事項、次回注意点など（任意）"></textarea></label>
       </details>
       <div class="validation-message" aria-live="polite"></div>
+    </article>
+  </template>
+
+
+  <template id="high-confidence-template">
+    <article class="high-confidence-item">
+      <div class="high-confidence-header">
+        <strong class="high-confidence-title">高確信誤答</strong>
+        <button class="delete-high-confidence-error danger-text" type="button">削除</button>
+      </div>
+      <label>誤って正しいと思っていた内容<textarea data-high-field="misconception" rows="2" placeholder="例：甲状腺クリーゼでは無機ヨードを抗甲状腺薬より先に投与すると思っていた"></textarea></label>
+      <label>正しい知識・修正内容<textarea data-high-field="correction" rows="2" placeholder="例：抗甲状腺薬を先に投与し、その後に無機ヨードを投与する（不明なら空欄可）"></textarea></label>
     </article>
   </template>
 

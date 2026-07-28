@@ -57,8 +57,6 @@ export function createStudyDayRecord({ config, studyDate, now = new Date() }) {
     planTargetDateManual: false,
     status: "open",
     dailyContext: {
-      sleepHours: "",
-      concentration: "",
       dailyNote: ""
     },
     blocks: [],
@@ -76,7 +74,6 @@ export function createEmptyBlock(now = new Date()) {
     subjectName: "",
     field: "",
     materialName: "QB",
-    materialVersion: "",
     qbMode: "通常モード",
     exerciseTypeId: "",
     exerciseType: "",
@@ -92,12 +89,19 @@ export function createEmptyBlock(now = new Date()) {
     errorReasoning: 0,
     errorReading: 0,
     errorOther: 0,
-    highConfidenceErrorCount: 0,
+    highConfidenceErrors: [],
     durationMinutes: 0,
     knowledgeGaps: "",
     oralRecallTasks: [],
-    ankiCandidates: "",
     notes: ""
+  };
+}
+
+export function createEmptyHighConfidenceError() {
+  return {
+    errorId: createId("high"),
+    misconception: "",
+    correction: ""
   };
 }
 
@@ -128,10 +132,7 @@ export function migrateRecord(input, config) {
   record.revision = Number(record.revision) || 0;
   record.status = record.status === "finalized" ? "finalized" : "open";
   record.dailyContext = {
-    sleepHours: "",
-    concentration: "",
-    dailyNote: "",
-    ...(record.dailyContext ?? {})
+    dailyNote: String(record.dailyContext?.dailyNote ?? "")
   };
   record.blocks = Array.isArray(record.blocks) ? record.blocks : [];
   record.quickNotes = Array.isArray(record.quickNotes) ? record.quickNotes : [];
@@ -145,6 +146,36 @@ export function migrateRecord(input, config) {
       ...block,
       blockId: block?.blockId || createId("block")
     };
+
+    const existingHighConfidenceErrors = Array.isArray(block?.highConfidenceErrors) ? block.highConfidenceErrors : [];
+    migratedBlock.highConfidenceErrors = existingHighConfidenceErrors.map((item) => ({
+      ...createEmptyHighConfidenceError(),
+      ...item,
+      errorId: item?.errorId || createId("high"),
+      misconception: String(item?.misconception ?? ""),
+      correction: String(item?.correction ?? "")
+    }));
+
+    const legacyHighConfidenceCount = Math.max(0, Number(block?.highConfidenceErrorCount) || 0);
+    if (migratedBlock.highConfidenceErrors.length === 0 && legacyHighConfidenceCount > 0) {
+      for (let index = 0; index < legacyHighConfidenceCount; index += 1) {
+        migratedBlock.highConfidenceErrors.push({
+          ...createEmptyHighConfidenceError(),
+          misconception: `旧版から移行した高確信誤答${index + 1}（内容を追記してください）`,
+          correction: ""
+        });
+      }
+    }
+
+    const removedFieldNotes = [];
+    if (String(block?.materialVersion ?? "").trim()) removedFieldNotes.push(`教材版：${String(block.materialVersion).trim()}`);
+    if (String(block?.ankiCandidates ?? "").trim()) removedFieldNotes.push(`旧Anki候補：${String(block.ankiCandidates).trim()}`);
+    if (removedFieldNotes.length > 0) {
+      migratedBlock.notes = [String(migratedBlock.notes ?? "").trim(), ...removedFieldNotes].filter(Boolean).join("\n");
+    }
+    delete migratedBlock.materialVersion;
+    delete migratedBlock.ankiCandidates;
+    delete migratedBlock.highConfidenceErrorCount;
 
     const existingTasks = Array.isArray(block?.oralRecallTasks) ? block.oralRecallTasks : [];
     migratedBlock.oralRecallTasks = existingTasks.map((task) => ({
@@ -247,7 +278,7 @@ export function validateBlock(block, config = null) {
   const numericKeys = [
     "questionCount", "unattemptedQuestionCount", "unattemptedCorrectCount",
     "confidentCorrect", "uncertainCorrect", "errorKnowledge", "errorReasoning",
-    "errorReading", "errorOther", "highConfidenceErrorCount", "durationMinutes"
+    "errorReading", "errorOther", "durationMinutes"
   ];
 
   for (const key of numericKeys) {
@@ -264,7 +295,7 @@ export function validateBlock(block, config = null) {
   const questionCount = Number(block.questionCount) || 0;
   const unattemptedQuestionCount = Number(block.unattemptedQuestionCount) || 0;
   const unattemptedCorrectCount = Number(block.unattemptedCorrectCount) || 0;
-  const highConfidenceErrorCount = Number(block.highConfidenceErrorCount) || 0;
+  const highConfidenceErrors = Array.isArray(block.highConfidenceErrors) ? block.highConfidenceErrors : [];
 
   const exercise = config?.exerciseTypes?.find((item) => item.id === block.exerciseTypeId);
   if (exercise?.requiresQuestions && questionCount === 0) {
@@ -284,9 +315,14 @@ export function validateBlock(block, config = null) {
   if (unattemptedCorrectCount > totals.totalCorrect) {
     errors.push("未演習正解数は総正解数以下にしてください。");
   }
-  if (highConfidenceErrorCount > totals.totalErrors) {
-    errors.push("高確信誤答数は総誤答数以下にしてください。");
+  if (highConfidenceErrors.length > totals.totalErrors) {
+    errors.push("高確信誤答の登録件数は総誤答数以下にしてください。");
   }
+  highConfidenceErrors.forEach((item, index) => {
+    if (!String(item?.misconception ?? "").trim()) {
+      errors.push(`高確信誤答${index + 1}の誤認内容を入力してください。`);
+    }
+  });
 
   if (unattemptedQuestionCount > 0 && block.priorExposureStatusId === "unknown") {
     warnings.push("過去接触不明のため、未演習問題による正式な卒業判定には使いません。");
@@ -314,7 +350,7 @@ export function validateBlock(block, config = null) {
     }
   });
 
-  if (questionCount === 0 && Number(block.durationMinutes) === 0 && !block.notes && !block.knowledgeGaps && oralRecallTasks.length === 0) {
+  if (questionCount === 0 && Number(block.durationMinutes) === 0 && !block.notes && !block.knowledgeGaps && oralRecallTasks.length === 0 && highConfidenceErrors.length === 0) {
     warnings.push("問題数・学習時間・メモがすべて空です。");
   }
 
@@ -388,7 +424,7 @@ export function summarizeRecord(record) {
     acc.durationMinutes += Number(block.durationMinutes) || 0;
     acc.unattemptedQuestionCount += Number(block.unattemptedQuestionCount) || 0;
     acc.unattemptedCorrectCount += Number(block.unattemptedCorrectCount) || 0;
-    acc.highConfidenceErrorCount += Number(block.highConfidenceErrorCount) || 0;
+    acc.highConfidenceErrorCount += Array.isArray(block.highConfidenceErrors) ? block.highConfidenceErrors.length : 0;
     return acc;
   }, {
     questionCount: 0,
@@ -411,6 +447,19 @@ function valueOrNone(value) {
 function percent(numerator, denominator) {
   if (!denominator) return "算出不可";
   return `${(numerator / denominator * 100).toFixed(1)}%`;
+}
+
+function highConfidenceLogLines(block) {
+  const items = Array.isArray(block.highConfidenceErrors) ? block.highConfidenceErrors : [];
+  if (items.length === 0) return ["高確信誤答：なし"];
+  const lines = [`高確信誤答数：${items.length}`];
+  items.forEach((item, index) => {
+    lines.push(
+      `高確信誤答${index + 1} 誤認：${valueOrNone(item.misconception)}`,
+      `高確信誤答${index + 1} 修正：${valueOrNone(item.correction)}`
+    );
+  });
+  return lines;
 }
 
 function oralRecallLogLines(block) {
@@ -446,8 +495,6 @@ export function generateLog(record) {
     `次回計画対象日：${record.planTargetDate}`,
     "",
     "【日単位情報】",
-    `睡眠時間：${context.sleepHours === "" ? "未入力" : `${context.sleepHours}時間`}`,
-    `集中度：${context.concentration === "" ? "未入力" : `${context.concentration}/5`}`,
     `日全体メモ：${valueOrNone(context.dailyNote)}`,
     "",
     "【当日集計】",
@@ -475,8 +522,7 @@ export function generateLog(record) {
       `科目：${block.subjectName || block.subjectId || "未入力"}`,
       `正式分野名：${valueOrNone(block.field)}`,
       `教材名：${valueOrNone(block.materialName)}`,
-      `教材版：${valueOrNone(block.materialVersion)}`,
-      `QBモード：${valueOrNone(block.qbMode)}`,
+      `QBモード：${block.materialName === "QB" ? valueOrNone(block.qbMode) : "該当なし"}`,
       `演習区分：${block.exerciseType || block.exerciseTypeId || "未入力"}`,
       `問題範囲：${valueOrNone(block.questionRange)}`,
       `過去接触状況：${valueOrNone(block.priorExposureStatus)}`,
@@ -490,7 +536,7 @@ export function generateLog(record) {
       `総正解：${totals.totalCorrect}`,
       `総誤答：${totals.totalErrors}`,
       `総正答率：${percent(totals.totalCorrect, Number(block.questionCount) || 0)}`,
-      `高確信誤答数：${Number(block.highConfidenceErrorCount) || 0}`,
+      ...highConfidenceLogLines(block),
       `未演習問題数：${Number(block.unattemptedQuestionCount) || 0}`,
       `未演習正解数：${Number(block.unattemptedCorrectCount) || 0}`,
       `未演習正答率：${percent(Number(block.unattemptedCorrectCount) || 0, Number(block.unattemptedQuestionCount) || 0)}`,
@@ -499,8 +545,7 @@ export function generateLog(record) {
       `所要時間：${Number(block.durationMinutes) || 0}分`,
       `欠損知識（重要上位3項目）：${valueOrNone(block.knowledgeGaps)}`,
       ...oralRecallLogLines(block),
-      `Anki候補：${valueOrNone(block.ankiCandidates)}`,
-      `自由メモ：${valueOrNone(block.notes)}`
+      `このブロックの補足：${valueOrNone(block.notes)}`
     );
   });
 
@@ -518,8 +563,8 @@ export function generateLog(record) {
     "・Webの各学習ブロックを1行として処理し、同一単位が複数ある場合だけ内容を確認して統合する。",
     "・演習数は、自信あり正解・迷い正解・知識不足誤答・推論ミス・読み落とし・その他誤答の合計とする。",
     "・総正解、各率、分類整合チェックはExcel数式または計算で更新する。",
-    "・睡眠時間と集中度は同一学習日の最初の行だけへ入力し、重複入力しない。",
-    "・コメント／欠損知識メモには、問題範囲、過去接触状況、欠損知識、口頭再生、Anki候補、自由メモを簡潔に統合する。",
+    "・日全体メモは同一学習日の最初の行だけへ入力し、重複入力しない。",
+    "・コメント／欠損知識メモには、問題範囲、過去接触状況、欠損知識、高確信誤答、口頭再生、このブロックの補足を簡潔に統合する。",
     "",
     "【進捗・判定規則】",
     "・演習区分が『1周目問題』のブロックだけを、1周目問題進捗へ加算する。",
@@ -528,7 +573,7 @@ export function generateLog(record) {
     "・過去接触不明の問題セットは、再活性化または暫定安定の判定にのみ使用する。",
     "・同じ問題セットを、通常ブロックと混合問題の両方へ重複記載しない。",
     "・高確信誤答、安全課題、口頭再生△・×を優先して弱点・復習予定へ反映する。",
-    "・Anki候補は自動採用せず、新規カード・既存カード修正・不採用を判断する。",
+    "・欠損知識、高確信誤答、口頭再生△・×から、Anki化の要否、新規カード、既存カード修正、不採用を判断する。",
     "",
     "【日時・重複処理規則】",
     `・すべての学習ブロックを学習日${record.studyDate}の実績として処理する。`,

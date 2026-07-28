@@ -4,6 +4,7 @@ import {
   blockTotals,
   createBackupEnvelope,
   createEmptyBlock,
+  createEmptyHighConfidenceError,
   createEmptyOralRecallTask,
   createId,
   createStudyDayRecord,
@@ -60,11 +61,12 @@ const elements = {
   studyDateLabel: $("#study-date-label"), recordId: $("#record-id"), midnightWarning: $("#midnight-warning"),
   blocks: $("#blocks"), blocksEmpty: $("#blocks-empty"), addBlock: $("#add-block"),
   quickNoteType: $("#quick-note-type"), quickNoteText: $("#quick-note-text"), addQuickNote: $("#add-quick-note"), quickNotes: $("#quick-notes"),
-  sleepHours: $("#sleep-hours"), concentration: $("#concentration"), dailyNote: $("#daily-note"),
+  dailyNote: $("#daily-note"),
   planTargetDate: $("#plan-target-date"), finalizeRecord: $("#finalize-record"), copyLog: $("#copy-log"),
   openChatgpt: $("#open-chatgpt"), generatedLog: $("#generated-log"), reopenRecord: $("#reopen-record"), deleteRecord: $("#delete-record"),
   toast: $("#toast"), sumBlocks: $("#sum-blocks"), sumQuestions: $("#sum-questions"), sumConfident: $("#sum-confident"),
-  sumUncertain: $("#sum-uncertain"), sumErrors: $("#sum-errors"), sumMinutes: $("#sum-minutes"), blockTemplate: $("#block-template"), oralTaskTemplate: $("#oral-task-template"),
+  sumUncertain: $("#sum-uncertain"), sumErrors: $("#sum-errors"), sumMinutes: $("#sum-minutes"), blockTemplate: $("#block-template"),
+  highConfidenceTemplate: $("#high-confidence-template"), oralTaskTemplate: $("#oral-task-template"),
   connectionChip: $("#connection-chip"), saveChip: $("#save-chip"), installMessage: $("#install-message"),
   installApp: $("#install-app"), showInstallGuide: $("#show-install-guide"), installGuide: $("#install-guide"), applyUpdate: $("#apply-update"),
   exportBackup: $("#export-backup"), importBackup: $("#import-backup"), restorePrevious: $("#restore-previous"),
@@ -239,8 +241,6 @@ function render() {
   elements.statusChip.textContent = record.status === "finalized" ? `確定済 v${record.revision}` : "入力中";
   elements.statusChip.dataset.status = record.status;
   elements.planTargetDate.value = record.planTargetDate || addDays(record.studyDate, 1);
-  elements.sleepHours.value = record.dailyContext.sleepHours ?? "";
-  elements.concentration.value = record.dailyContext.concentration ?? "";
   elements.dailyNote.value = record.dailyContext.dailyNote ?? "";
 
   const today = localDateString();
@@ -257,7 +257,7 @@ function render() {
 
   const isFinalized = record.status === "finalized";
   [elements.addBlock, elements.addQuickNote, elements.quickNoteText, elements.quickNoteType,
-    elements.sleepHours, elements.concentration, elements.dailyNote, elements.finalizeRecord]
+    elements.dailyNote, elements.finalizeRecord]
     .forEach((element) => { element.disabled = isFinalized; });
   elements.reopenRecord.classList.toggle("hidden", !isFinalized);
   elements.copyLog.disabled = !isFinalized;
@@ -321,6 +321,85 @@ function updateResultDetailsState(card, block) {
   const hasResult = Number(block.questionCount) > 0 || totals.classifiedTotal > 0 || Number(block.durationMinutes) > 0;
   if (!details.dataset.userToggled) details.open = Boolean(exercise?.requiresQuestions || hasResult);
   details.addEventListener("toggle", () => { details.dataset.userToggled = "1"; }, { once: true });
+}
+
+function updateConditionalFields(card, block) {
+  const isQb = block.materialName === "QB";
+  card.querySelector(".qb-mode-field")?.classList.toggle("hidden", !isQb);
+
+  const showUnattempted = ["first-round", "new-unseen"].includes(block.exerciseTypeId)
+    || Number(block.unattemptedQuestionCount) > 0
+    || Number(block.unattemptedCorrectCount) > 0;
+  card.querySelectorAll(".unattempted-field").forEach((element) => element.classList.toggle("hidden", !showUnattempted));
+  card.querySelector(".fill-unattempted")?.classList.toggle("hidden", !showUnattempted);
+
+  const optional = card.querySelector(".optional-details");
+  if (optional && !optional.dataset.userToggled) {
+    optional.open = Boolean(showUnattempted || String(block.questionRange ?? "").trim() || block.priorExposureStatusId !== "unknown");
+  }
+}
+
+function renderHighConfidenceErrors(card, block) {
+  const container = card.querySelector(".high-confidence-errors");
+  const empty = card.querySelector(".high-confidence-empty");
+  container.innerHTML = "";
+  const items = Array.isArray(block.highConfidenceErrors) ? block.highConfidenceErrors : [];
+  empty.classList.toggle("hidden", items.length > 0);
+
+  items.forEach((item, index) => {
+    const fragment = elements.highConfidenceTemplate.content.cloneNode(true);
+    const row = fragment.querySelector(".high-confidence-item");
+    row.dataset.errorId = item.errorId;
+    fragment.querySelector(".high-confidence-title").textContent = `高確信誤答 ${index + 1}`;
+
+    fragment.querySelectorAll("[data-high-field]").forEach((input) => {
+      const field = input.dataset.highField;
+      input.value = item[field] ?? "";
+      input.disabled = record.status === "finalized";
+      input.addEventListener("input", () => updateHighConfidenceError(block.blockId, item.errorId, field, input.value, card));
+    });
+
+    const remove = fragment.querySelector(".delete-high-confidence-error");
+    remove.disabled = record.status === "finalized";
+    remove.addEventListener("click", () => deleteHighConfidenceError(block.blockId, item.errorId, card));
+    container.appendChild(fragment);
+  });
+}
+
+function addHighConfidenceError(blockId, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  if (!block) return;
+  block.highConfidenceErrors ??= [];
+  block.highConfidenceErrors.push(createEmptyHighConfidenceError());
+  saveRecord();
+  renderHighConfidenceErrors(card, block);
+  updateValidationMessage(card, block);
+  renderSummary();
+  requestAnimationFrame(() => card.querySelector(".high-confidence-item:last-child textarea")?.focus());
+}
+
+function updateHighConfidenceError(blockId, errorId, field, value, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  const item = block?.highConfidenceErrors?.find((entry) => entry.errorId === errorId);
+  if (!block || !item) return;
+  item[field] = value;
+  saveRecord();
+  updateValidationMessage(card, block);
+}
+
+function deleteHighConfidenceError(blockId, errorId, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  if (!block) return;
+  if (!confirm("この高確信誤答を削除しますか？")) return;
+  snapshotCurrent();
+  block.highConfidenceErrors = (block.highConfidenceErrors ?? []).filter((item) => item.errorId !== errorId);
+  saveRecord();
+  renderHighConfidenceErrors(card, block);
+  updateValidationMessage(card, block);
+  renderSummary();
 }
 
 function renderOralRecallTasks(card, block) {
@@ -409,6 +488,8 @@ function renderBlocks() {
     card.querySelector('[data-field="exerciseTypeId"]').innerHTML = options(EXAM_CONFIG.exerciseTypes, block.exerciseTypeId);
     card.querySelector('[data-field="priorExposureStatusId"]').innerHTML = options(EXAM_CONFIG.priorExposureStatuses, block.priorExposureStatusId);
     fillFieldDatalist(card, block);
+    const optionalDetails = card.querySelector(".optional-details");
+    optionalDetails?.addEventListener("toggle", () => { optionalDetails.dataset.userToggled = "1"; });
 
     card.querySelectorAll("[data-field]").forEach((input) => {
       const field = input.dataset.field;
@@ -426,6 +507,9 @@ function renderBlocks() {
     });
     card.querySelector(".delete-block").addEventListener("click", () => deleteBlock(block.blockId));
     card.querySelector(".duplicate-block").addEventListener("click", () => duplicateBlock(block.blockId));
+    const addHighConfidence = card.querySelector(".add-high-confidence-error");
+    addHighConfidence.disabled = disabled;
+    addHighConfidence.addEventListener("click", () => addHighConfidenceError(block.blockId, card));
     const addOralTask = card.querySelector(".add-oral-task");
     addOralTask.disabled = disabled;
     addOralTask.addEventListener("click", () => addOralRecallTask(block.blockId, card));
@@ -433,7 +517,9 @@ function renderBlocks() {
     card.querySelector(".fill-unattempted").addEventListener("click", () => fillUnattempted(block, card));
     card.querySelector(".reset-results").addEventListener("click", () => resetResultClassification(block, card));
 
+    renderHighConfidenceErrors(card, block);
     renderOralRecallTasks(card, block);
+    updateConditionalFields(card, block);
     setCardDerivedValues(card, block);
     updateValidationMessage(card, block);
     updateResultDetailsState(card, block);
@@ -443,7 +529,7 @@ function renderBlocks() {
 
 const numericFields = new Set([
   "questionCount", "unattemptedQuestionCount", "unattemptedCorrectCount", "confidentCorrect", "uncertainCorrect",
-  "errorKnowledge", "errorReasoning", "errorReading", "errorOther", "highConfidenceErrorCount", "durationMinutes"
+  "errorKnowledge", "errorReasoning", "errorReading", "errorOther", "durationMinutes"
 ]);
 
 function updateBlock(blockId, field, value, card) {
@@ -456,6 +542,11 @@ function updateBlock(blockId, field, value, card) {
     block.subjectName = EXAM_CONFIG.subjects.find((subject) => subject.id === value)?.name ?? "";
     fillFieldDatalist(card, block);
   }
+  if (field === "materialName") {
+    if (value === "QB" && block.qbMode === "該当なし") block.qbMode = "通常モード";
+    if (value !== "QB") block.qbMode = "該当なし";
+    syncBlockInputs(card, block, ["qbMode"]);
+  }
   if (field === "exerciseTypeId") {
     block.exerciseType = EXAM_CONFIG.exerciseTypes.find((item) => item.id === value)?.label ?? "";
     updateResultDetailsState(card, block);
@@ -465,6 +556,7 @@ function updateBlock(blockId, field, value, card) {
   }
 
   saveRecord();
+  updateConditionalFields(card, block);
   setCardDerivedValues(card, block);
   updateValidationMessage(card, block);
   renderSummary();
@@ -493,16 +585,20 @@ function fillUnattempted(block, card) {
   block.unattemptedCorrectCount = totals.totalCorrect;
   saveRecord();
   syncBlockInputs(card, block, ["unattemptedQuestionCount", "unattemptedCorrectCount"]);
+  updateConditionalFields(card, block);
   updateValidationMessage(card, block);
   showToast("未演習問題数と正解数を入力しました。接触状況も確認してください。");
 }
 
 function resetResultClassification(block, card) {
-  if (!confirm("演習数と所要時間は残し、正解・誤答分類と未演習数を0へ戻しますか？")) return;
+  if (!confirm("演習数と所要時間は残し、正解・誤答分類、未演習数、高確信誤答の登録をリセットしますか？")) return;
   ["confidentCorrect", "uncertainCorrect", "errorKnowledge", "errorReasoning", "errorReading", "errorOther",
-    "highConfidenceErrorCount", "unattemptedQuestionCount", "unattemptedCorrectCount"].forEach((field) => { block[field] = 0; });
+    "unattemptedQuestionCount", "unattemptedCorrectCount"].forEach((field) => { block[field] = 0; });
+  block.highConfidenceErrors = [];
   saveRecord({ snapshotBefore: true });
   syncBlockInputs(card, block);
+  renderHighConfidenceErrors(card, block);
+  updateConditionalFields(card, block);
   setCardDerivedValues(card, block);
   updateValidationMessage(card, block);
   renderSummary();
@@ -715,16 +811,6 @@ function deleteCurrentRecord() {
 }
 
 function bindDailyContext() {
-  elements.sleepHours.addEventListener("input", () => {
-    if (!record) return;
-    record.dailyContext.sleepHours = elements.sleepHours.value;
-    saveRecord();
-  });
-  elements.concentration.addEventListener("change", () => {
-    if (!record) return;
-    record.dailyContext.concentration = elements.concentration.value;
-    saveRecord();
-  });
   elements.dailyNote.addEventListener("input", () => {
     if (!record) return;
     record.dailyContext.dailyNote = elements.dailyNote.value;
