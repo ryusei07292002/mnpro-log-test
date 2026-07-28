@@ -42,7 +42,7 @@ export function createId(prefix = "id") {
 
 export function createStudyDayRecord({ config, studyDate, now = new Date() }) {
   return {
-    schemaVersion: config.storageSchemaVersion ?? 3,
+    schemaVersion: config.storageSchemaVersion ?? 4,
     appVersion: config.appVersion ?? "",
     studyDayId: createId(`sd_${studyDate.replaceAll("-", "")}`),
     revision: 0,
@@ -95,9 +95,17 @@ export function createEmptyBlock(now = new Date()) {
     highConfidenceErrorCount: 0,
     durationMinutes: 0,
     knowledgeGaps: "",
-    oralRecallStatus: "未実施",
-    oralRecallNotes: "",
+    oralRecallTasks: [],
     ankiCandidates: "",
+    notes: ""
+  };
+}
+
+export function createEmptyOralRecallTask() {
+  return {
+    taskId: createId("oral"),
+    prompt: "",
+    status: "未実施",
     notes: ""
   };
 }
@@ -110,7 +118,7 @@ function cloneValue(value) {
 export function migrateRecord(input, config) {
   if (!input || typeof input !== "object") return null;
   const record = cloneValue(input);
-  const targetVersion = config?.storageSchemaVersion ?? 3;
+  const targetVersion = config?.storageSchemaVersion ?? 4;
 
   record.schemaVersion = Number(record.schemaVersion) || 1;
   record.appVersion = config?.appVersion ?? record.appVersion ?? "";
@@ -131,11 +139,38 @@ export function migrateRecord(input, config) {
   record.lastFinalizedFingerprint ??= null;
   record.lastSavedAt ??= null;
 
-  record.blocks = record.blocks.map((block) => ({
-    ...createEmptyBlock(),
-    ...block,
-    blockId: block?.blockId || createId("block")
-  }));
+  record.blocks = record.blocks.map((block) => {
+    const migratedBlock = {
+      ...createEmptyBlock(),
+      ...block,
+      blockId: block?.blockId || createId("block")
+    };
+
+    const existingTasks = Array.isArray(block?.oralRecallTasks) ? block.oralRecallTasks : [];
+    migratedBlock.oralRecallTasks = existingTasks.map((task) => ({
+      ...createEmptyOralRecallTask(),
+      ...task,
+      taskId: task?.taskId || createId("oral"),
+      prompt: String(task?.prompt ?? ""),
+      status: String(task?.status ?? "未実施"),
+      notes: String(task?.notes ?? "")
+    }));
+
+    const legacyStatus = String(block?.oralRecallStatus ?? "未実施");
+    const legacyNotes = String(block?.oralRecallNotes ?? "").trim();
+    if (migratedBlock.oralRecallTasks.length === 0 && (legacyStatus !== "未実施" || legacyNotes)) {
+      migratedBlock.oralRecallTasks.push({
+        ...createEmptyOralRecallTask(),
+        prompt: "旧版から移行した口頭再生課題（課題内容を追記してください）",
+        status: legacyStatus,
+        notes: legacyNotes
+      });
+    }
+
+    delete migratedBlock.oralRecallStatus;
+    delete migratedBlock.oralRecallNotes;
+    return migratedBlock;
+  });
   record.quickNotes = record.quickNotes.map((note) => ({
     noteId: note?.noteId || createId("note"),
     createdAt: note?.createdAt || localDateTimeString(),
@@ -268,7 +303,18 @@ export function validateBlock(block, config = null) {
     warnings.push(`欠損知識は重要上位${maxGaps}項目までを推奨します。`);
   }
 
-  if (questionCount === 0 && Number(block.durationMinutes) === 0 && !block.notes && !block.knowledgeGaps && !block.oralRecallNotes) {
+  const oralRecallTasks = Array.isArray(block.oralRecallTasks) ? block.oralRecallTasks : [];
+  oralRecallTasks.forEach((task, index) => {
+    if (!String(task?.prompt ?? "").trim()) {
+      errors.push(`口頭再生課題${index + 1}の課題内容を入力してください。`);
+    }
+    const allowedStatuses = config?.oralRecallStatuses ?? ["未実施", "○", "△", "×"];
+    if (!allowedStatuses.includes(String(task?.status ?? "未実施"))) {
+      errors.push(`口頭再生課題${index + 1}の結果が不正です。`);
+    }
+  });
+
+  if (questionCount === 0 && Number(block.durationMinutes) === 0 && !block.notes && !block.knowledgeGaps && oralRecallTasks.length === 0) {
     warnings.push("問題数・学習時間・メモがすべて空です。");
   }
 
@@ -367,6 +413,20 @@ function percent(numerator, denominator) {
   return `${(numerator / denominator * 100).toFixed(1)}%`;
 }
 
+function oralRecallLogLines(block) {
+  const tasks = Array.isArray(block.oralRecallTasks) ? block.oralRecallTasks : [];
+  if (tasks.length === 0) return ["口頭再生課題：なし"];
+  const lines = [`口頭再生課題数：${tasks.length}`];
+  tasks.forEach((task, index) => {
+    lines.push(
+      `口頭再生${index + 1} 課題：${valueOrNone(task.prompt)}`,
+      `口頭再生${index + 1} 結果：${valueOrNone(task.status)}`,
+      `口頭再生${index + 1} メモ：${valueOrNone(task.notes)}`
+    );
+  });
+  return lines;
+}
+
 export function generateLog(record) {
   const summary = summarizeRecord(record);
   const context = record.dailyContext ?? {};
@@ -438,8 +498,7 @@ export function generateLog(record) {
       `1周目進捗へ加算：${firstRound ? "はい" : "いいえ"}`,
       `所要時間：${Number(block.durationMinutes) || 0}分`,
       `欠損知識（重要上位3項目）：${valueOrNone(block.knowledgeGaps)}`,
-      `口頭再生結果：${valueOrNone(block.oralRecallStatus)}`,
-      `口頭再生メモ：${valueOrNone(block.oralRecallNotes)}`,
+      ...oralRecallLogLines(block),
       `Anki候補：${valueOrNone(block.ankiCandidates)}`,
       `自由メモ：${valueOrNone(block.notes)}`
     );

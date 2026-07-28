@@ -8,7 +8,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="国試ログ">
   <meta name="description" content="医師国家試験Pro向けの当日学習ログ作成ツール">
-  <meta name="robots" content="noindex,nofollow,noarchive">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -19,7 +18,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.0</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.1</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -218,14 +217,35 @@
       <details open>
         <summary>欠損知識・口頭再生・Anki候補</summary>
         <label>欠損知識（重要上位3項目、1行1項目）<textarea data-field="knowledgeGaps" rows="4" placeholder="1. ...&#10;2. ...&#10;3. ..."></textarea></label>
-        <div class="form-grid">
-          <label>口頭再生結果<select data-field="oralRecallStatus"></select></label>
-          <label>口頭再生メモ<textarea data-field="oralRecallNotes" rows="3" placeholder="再生できなかった論点、安全課題など"></textarea></label>
-        </div>
+        <section class="oral-recall-section">
+          <div class="subsection-heading">
+            <div>
+              <strong>口頭再生課題</strong>
+              <p class="hint">課題ごとに「何を再生したか・結果・補足」を記録します。複数追加できます。</p>
+            </div>
+            <button class="add-oral-task secondary" type="button">＋口頭再生課題</button>
+          </div>
+          <div class="oral-recall-tasks"></div>
+          <p class="oral-recall-empty hint">口頭再生課題は未登録です。</p>
+        </section>
         <label>Anki候補<textarea data-field="ankiCandidates" rows="3" placeholder="候補だけを記録。新規・修正・不採用はChatGPTが判断します。"></textarea></label>
         <label>自由メモ<textarea data-field="notes" rows="3" placeholder="状態、教材確認事項、次回注意点など"></textarea></label>
       </details>
       <div class="validation-message" aria-live="polite"></div>
+    </article>
+  </template>
+
+  <template id="oral-task-template">
+    <article class="oral-task-item">
+      <div class="oral-task-header">
+        <strong class="oral-task-title">口頭再生</strong>
+        <button class="delete-oral-task danger-text" type="button">削除</button>
+      </div>
+      <label>口頭再生課題<textarea data-oral-field="prompt" rows="2" placeholder="例：心房細動の抗凝固適応を、条件と例外まで説明する"></textarea></label>
+      <div class="form-grid oral-task-grid">
+        <label>結果<select data-oral-field="status"></select></label>
+        <label>補足メモ<textarea data-oral-field="notes" rows="2" placeholder="言えなかった点、曖昧だった条件、次回の注意点など"></textarea></label>
+      </div>
     </article>
   </template>
 

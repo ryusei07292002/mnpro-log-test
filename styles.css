@@ -175,3 +175,25 @@ summary { cursor: pointer; font-weight: 800; color: var(--blue); padding: 8px 0;
   .mini-chip.warn { color: #ffd58d; background: #4a3719; border-color: #735520; }
   .mini-chip.error, .storage-error-banner { color: #ffbbb5; background: #4b211f; border-color: #73302c; }
 }
+
+
+/* v0.3.1: 複数口頭再生課題 */
+.oral-recall-section {
+  margin: 14px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft);
+}
+.subsection-heading, .oral-task-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.subsection-heading p { margin: 4px 0 0; }
+.oral-recall-tasks { display: grid; gap: 12px; margin-top: 12px; }
+.oral-task-item {
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.oral-task-header { align-items: center; margin-bottom: 8px; }
+.oral-task-grid { grid-template-columns: minmax(120px, .45fr) minmax(0, 1.55fr); }
+.oral-recall-empty { margin: 10px 0 0; }
+@media (max-width: 680px) {
+  .subsection-heading { flex-direction: column; }
+  .add-oral-task { width: 100%; }
+  .oral-task-grid { grid-template-columns: 1fr; }
+}

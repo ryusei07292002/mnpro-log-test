@@ -4,6 +4,7 @@ import {
   blockTotals,
   createBackupEnvelope,
   createEmptyBlock,
+  createEmptyOralRecallTask,
   createId,
   createStudyDayRecord,
   finalizeRecord,
@@ -63,7 +64,7 @@ const elements = {
   planTargetDate: $("#plan-target-date"), finalizeRecord: $("#finalize-record"), copyLog: $("#copy-log"),
   openChatgpt: $("#open-chatgpt"), generatedLog: $("#generated-log"), reopenRecord: $("#reopen-record"), deleteRecord: $("#delete-record"),
   toast: $("#toast"), sumBlocks: $("#sum-blocks"), sumQuestions: $("#sum-questions"), sumConfident: $("#sum-confident"),
-  sumUncertain: $("#sum-uncertain"), sumErrors: $("#sum-errors"), sumMinutes: $("#sum-minutes"), blockTemplate: $("#block-template"),
+  sumUncertain: $("#sum-uncertain"), sumErrors: $("#sum-errors"), sumMinutes: $("#sum-minutes"), blockTemplate: $("#block-template"), oralTaskTemplate: $("#oral-task-template"),
   connectionChip: $("#connection-chip"), saveChip: $("#save-chip"), installMessage: $("#install-message"),
   installApp: $("#install-app"), showInstallGuide: $("#show-install-guide"), installGuide: $("#install-guide"), applyUpdate: $("#apply-update"),
   exportBackup: $("#export-backup"), importBackup: $("#import-backup"), restorePrevious: $("#restore-previous"),
@@ -322,6 +323,70 @@ function updateResultDetailsState(card, block) {
   details.addEventListener("toggle", () => { details.dataset.userToggled = "1"; }, { once: true });
 }
 
+function renderOralRecallTasks(card, block) {
+  const container = card.querySelector(".oral-recall-tasks");
+  const empty = card.querySelector(".oral-recall-empty");
+  container.innerHTML = "";
+  const tasks = Array.isArray(block.oralRecallTasks) ? block.oralRecallTasks : [];
+  empty.classList.toggle("hidden", tasks.length > 0);
+
+  tasks.forEach((task, index) => {
+    const fragment = elements.oralTaskTemplate.content.cloneNode(true);
+    const item = fragment.querySelector(".oral-task-item");
+    item.dataset.taskId = task.taskId;
+    fragment.querySelector(".oral-task-title").textContent = `口頭再生 ${index + 1}`;
+    const status = fragment.querySelector('[data-oral-field="status"]');
+    status.innerHTML = options(EXAM_CONFIG.oralRecallStatuses, task.status, false);
+
+    fragment.querySelectorAll("[data-oral-field]").forEach((input) => {
+      const field = input.dataset.oralField;
+      if (field !== "status") input.value = task[field] ?? "";
+      input.disabled = record.status === "finalized";
+      const eventName = input.tagName === "SELECT" ? "change" : "input";
+      input.addEventListener(eventName, () => updateOralRecallTask(block.blockId, task.taskId, field, input.value, card));
+    });
+
+    const remove = fragment.querySelector(".delete-oral-task");
+    remove.disabled = record.status === "finalized";
+    remove.addEventListener("click", () => deleteOralRecallTask(block.blockId, task.taskId, card));
+    container.appendChild(fragment);
+  });
+}
+
+function addOralRecallTask(blockId, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  if (!block) return;
+  block.oralRecallTasks ??= [];
+  block.oralRecallTasks.push(createEmptyOralRecallTask());
+  saveRecord();
+  renderOralRecallTasks(card, block);
+  updateValidationMessage(card, block);
+  requestAnimationFrame(() => card.querySelector(".oral-task-item:last-child textarea")?.focus());
+}
+
+function updateOralRecallTask(blockId, taskId, field, value, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  const task = block?.oralRecallTasks?.find((item) => item.taskId === taskId);
+  if (!block || !task) return;
+  task[field] = value;
+  saveRecord();
+  updateValidationMessage(card, block);
+}
+
+function deleteOralRecallTask(blockId, taskId, card) {
+  if (record.status === "finalized") return;
+  const block = record.blocks.find((item) => item.blockId === blockId);
+  if (!block) return;
+  if (!confirm("この口頭再生課題を削除しますか？")) return;
+  snapshotCurrent();
+  block.oralRecallTasks = (block.oralRecallTasks ?? []).filter((item) => item.taskId !== taskId);
+  saveRecord();
+  renderOralRecallTasks(card, block);
+  updateValidationMessage(card, block);
+}
+
 function renderBlocks() {
   elements.blocks.innerHTML = "";
   elements.blocksEmpty.classList.toggle("hidden", record.blocks.length > 0);
@@ -343,13 +408,11 @@ function renderBlocks() {
     card.querySelector('[data-field="qbMode"]').innerHTML = options(EXAM_CONFIG.qbModes, block.qbMode, false);
     card.querySelector('[data-field="exerciseTypeId"]').innerHTML = options(EXAM_CONFIG.exerciseTypes, block.exerciseTypeId);
     card.querySelector('[data-field="priorExposureStatusId"]').innerHTML = options(EXAM_CONFIG.priorExposureStatuses, block.priorExposureStatusId);
-    card.querySelector('[data-field="oralRecallStatus"]').innerHTML = options(EXAM_CONFIG.oralRecallStatuses, block.oralRecallStatus, false);
-
     fillFieldDatalist(card, block);
 
     card.querySelectorAll("[data-field]").forEach((input) => {
       const field = input.dataset.field;
-      if (!["subjectId", "materialName", "qbMode", "exerciseTypeId", "priorExposureStatusId", "oralRecallStatus"].includes(field)) {
+      if (!["subjectId", "materialName", "qbMode", "exerciseTypeId", "priorExposureStatusId"].includes(field)) {
         input.value = block[field] ?? "";
       }
       input.disabled = record.status === "finalized";
@@ -363,10 +426,14 @@ function renderBlocks() {
     });
     card.querySelector(".delete-block").addEventListener("click", () => deleteBlock(block.blockId));
     card.querySelector(".duplicate-block").addEventListener("click", () => duplicateBlock(block.blockId));
+    const addOralTask = card.querySelector(".add-oral-task");
+    addOralTask.disabled = disabled;
+    addOralTask.addEventListener("click", () => addOralRecallTask(block.blockId, card));
     card.querySelector(".fill-confident").addEventListener("click", () => fillRemainderAsConfident(block, card));
     card.querySelector(".fill-unattempted").addEventListener("click", () => fillUnattempted(block, card));
     card.querySelector(".reset-results").addEventListener("click", () => resetResultClassification(block, card));
 
+    renderOralRecallTasks(card, block);
     setCardDerivedValues(card, block);
     updateValidationMessage(card, block);
     updateResultDetailsState(card, block);
