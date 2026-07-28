@@ -216,3 +216,5 @@ summary { cursor: pointer; font-weight: 800; color: var(--blue); padding: 8px 0;
 @media (max-width: 680px) {
   .add-high-confidence-error { width: 100%; }
 }
+
+/* v0.3.3: 空学習日の破棄・初期画面復帰 */

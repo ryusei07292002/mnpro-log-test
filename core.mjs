@@ -114,6 +114,14 @@ export function createEmptyOralRecallTask() {
   };
 }
 
+export function hasMeaningfulStudyData(record) {
+  if (!record || typeof record !== "object") return false;
+  if (Array.isArray(record.blocks) && record.blocks.length > 0) return true;
+  if (Array.isArray(record.quickNotes) && record.quickNotes.length > 0) return true;
+  if (String(record.dailyContext?.dailyNote ?? "").trim()) return true;
+  return false;
+}
+
 function cloneValue(value) {
   if (globalThis.structuredClone) return structuredClone(value);
   return JSON.parse(JSON.stringify(value));

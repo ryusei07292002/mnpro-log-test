@@ -10,6 +10,7 @@ import {
   createStudyDayRecord,
   finalizeRecord,
   generateLog,
+  hasMeaningfulStudyData,
   localDateString,
   localDateTimeString,
   migrateRecord,
@@ -59,6 +60,7 @@ const elements = {
   emptyState: $("#empty-state"), workspace: $("#workspace"),
   newStudyDate: $("#new-study-date"), lateNightHint: $("#late-night-hint"), startRecord: $("#start-record"),
   studyDateLabel: $("#study-date-label"), recordId: $("#record-id"), midnightWarning: $("#midnight-warning"),
+  discardEmptyRecord: $("#discard-empty-record"),
   blocks: $("#blocks"), blocksEmpty: $("#blocks-empty"), addBlock: $("#add-block"),
   quickNoteType: $("#quick-note-type"), quickNoteText: $("#quick-note-text"), addQuickNote: $("#add-quick-note"), quickNotes: $("#quick-notes"),
   dailyNote: $("#daily-note"),
@@ -242,6 +244,11 @@ function render() {
   elements.statusChip.dataset.status = record.status;
   elements.planTargetDate.value = record.planTargetDate || addDays(record.studyDate, 1);
   elements.dailyNote.value = record.dailyContext.dailyNote ?? "";
+  const hasStudyData = hasMeaningfulStudyData(record);
+  elements.discardEmptyRecord.classList.toggle("hidden", hasStudyData || record.status === "finalized");
+  elements.deleteRecord.textContent = hasStudyData
+    ? "この学習日を削除して最初へ戻る"
+    : "入力のない学習日を破棄して最初へ戻る";
 
   const today = localDateString();
   if (today > record.studyDate && record.status === "open") {
@@ -794,20 +801,48 @@ function restoreDeleted() {
 }
 
 function deleteCurrentRecord() {
-  const phrase = prompt("現在の学習日を端末から削除します。削除直前データは復元用に残ります。続ける場合は「削除」と入力してください。");
-  if (phrase !== "削除") return;
-  try {
-    localStorage.setItem(deletedKey, JSON.stringify({ deletedAt: localDateTimeString(), record }));
-    localStorage.removeItem(storageKey);
-  } catch (error) {
-    console.warn("削除前バックアップを保存できませんでした", error);
-    if (!confirm("削除前バックアップを作れませんでした。それでも削除しますか？")) return;
-    localStorage.removeItem(storageKey);
+  if (!record) {
+    render();
+    return;
   }
+
+  const hasStudyData = hasMeaningfulStudyData(record);
+  if (!hasStudyData) {
+    if (!confirm("入力のない学習日を破棄して、最初の画面へ戻りますか？")) return;
+  } else {
+    const phrase = prompt("現在の学習日を端末から削除します。削除直前データは復元用に残ります。続ける場合は「削除」と入力してください。");
+    if (phrase !== "削除") return;
+  }
+
+  let deletedBackupSaved = false;
+  if (storageAvailable) {
+    try {
+      if (hasStudyData) {
+        localStorage.setItem(deletedKey, JSON.stringify({ deletedAt: localDateTimeString(), record }));
+        deletedBackupSaved = true;
+      }
+      localStorage.removeItem(storageKey);
+    } catch (error) {
+      console.warn("学習日の端末保存データを削除できませんでした", error);
+      if (hasStudyData && !confirm("削除前バックアップを作れませんでした。それでも画面上の学習日を破棄しますか？")) return;
+      try {
+        localStorage.removeItem(storageKey);
+      } catch (removeError) {
+        console.warn("端末保存データの消去にも失敗しました", removeError);
+      }
+    }
+  }
+
   record = null;
   generatedLog = "";
   render();
-  showToast("当日データを削除しました。復元は可能です。");
+  if (!hasStudyData) {
+    showToast("入力のない学習日を破棄しました。");
+  } else if (deletedBackupSaved) {
+    showToast("当日データを削除しました。復元は可能です。");
+  } else {
+    showToast("学習日を破棄して最初の画面へ戻りました。");
+  }
 }
 
 function bindDailyContext() {
@@ -905,6 +940,7 @@ function init() {
     render();
   });
   elements.deleteRecord.addEventListener("click", deleteCurrentRecord);
+  elements.discardEmptyRecord.addEventListener("click", deleteCurrentRecord);
   elements.exportBackup.addEventListener("click", exportBackup);
   elements.importBackup.addEventListener("click", () => elements.backupFile.click());
   elements.backupFile.addEventListener("change", () => importBackupFile(elements.backupFile.files?.[0]));

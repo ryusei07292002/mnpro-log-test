@@ -19,7 +19,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.2</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.3</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -85,7 +85,10 @@
             <p class="eyebrow">現在の学習日</p>
             <h2 id="study-date-label"></h2>
           </div>
-          <span id="midnight-warning" class="warning-chip hidden">日付跨ぎ中</span>
+          <div class="button-row compact summary-actions">
+            <span id="midnight-warning" class="warning-chip hidden">日付跨ぎ中</span>
+            <button id="discard-empty-record" class="ghost hidden" type="button">入力のない学習日を破棄して戻る</button>
+          </div>
         </div>
         <p id="record-id" class="mono muted"></p>
         <div class="summary-grid six">
@@ -156,7 +159,7 @@
         <textarea id="generated-log" class="log-output" rows="18" readonly placeholder="確定後にログが表示されます。"></textarea>
         <div class="danger-zone">
           <button id="reopen-record" class="ghost hidden">修正のため再開</button>
-          <button id="delete-record" class="danger">この端末の当日データを削除</button>
+          <button id="delete-record" class="danger">この学習日を削除して最初へ戻る</button>
         </div>
       </section>
     </div>
