@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17365d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="国試ログ">
+  <meta name="description" content="医師国家試験Pro向けの当日学習ログ作成ツール">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>国試AI学習ログ Pro</title>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.0</small></h1>
+    </div>
+    <span id="status-chip" class="status-chip">未開始</span>
+  </header>
+
+  <main class="container">
+    <section id="runtime-card" class="card runtime-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">端末内保存</p>
+          <h2>アプリ状態</h2>
+        </div>
+        <div class="runtime-chips">
+          <span id="connection-chip" class="mini-chip">通信確認中</span>
+          <span id="save-chip" class="mini-chip">保存待機</span>
+        </div>
+      </div>
+      <p id="install-message" class="hint">入力内容はこの端末へ自動保存されます。</p>
+      <div class="button-row runtime-actions">
+        <button id="install-app" class="secondary hidden" type="button">ホーム画面に追加</button>
+        <button id="show-install-guide" class="ghost" type="button">追加方法</button>
+        <button id="apply-update" class="primary hidden" type="button">最新版へ更新</button>
+      </div>
+      <div id="install-guide" class="install-guide hidden">
+        <p><strong>iPhone・iPad：</strong>Safariの共有ボタン →「ホーム画面に追加」</p>
+        <p><strong>Android：</strong>Chromeのメニュー →「ホーム画面に追加」または「アプリをインストール」</p>
+        <p class="hint">直接起動版HTMLではPWAを追加できません。Web公開版をHTTPSで開いたときに利用します。</p>
+      </div>
+    </section>
+
+    <section id="empty-state" class="card hero-card">
+      <h2>学習日を開始</h2>
+      <p>実際に勉強したときだけレコードを作ります。空白日は作らず、深夜0時を過ぎても確定するまで同じ学習日として記録します。</p>
+      <label>
+        この学習を記録する日
+        <input id="new-study-date" type="date">
+      </label>
+      <p id="late-night-hint" class="hint hidden"></p>
+      <button id="start-record" class="primary wide">この学習日を開始</button>
+    </section>
+
+    <section class="card data-protection-card">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">事故対策</p>
+          <h2>バックアップ・復元</h2>
+        </div>
+      </div>
+      <p class="hint">自動保存に加え、JSONファイルへ書き出せます。ブラウザデータ削除や端末変更の前に利用してください。</p>
+      <div class="button-row data-actions">
+        <button id="export-backup" class="secondary" type="button">バックアップを書き出す</button>
+        <button id="import-backup" class="ghost" type="button">バックアップを読み込む</button>
+        <button id="restore-previous" class="ghost hidden" type="button">1つ前の保存へ戻す</button>
+        <button id="restore-deleted" class="ghost hidden" type="button">削除直前データを復元</button>
+      </div>
+      <input id="backup-file" type="file" accept="application/json,.json" class="hidden">
+      <p id="backup-status" class="hint"></p>
+    </section>
+
+    <div id="workspace" class="hidden">
+      <section class="card summary-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">現在の学習日</p>
+            <h2 id="study-date-label"></h2>
+          </div>
+          <span id="midnight-warning" class="warning-chip hidden">日付跨ぎ中</span>
+        </div>
+        <p id="record-id" class="mono muted"></p>
+        <div class="summary-grid six">
+          <div><span>ブロック</span><strong id="sum-blocks">0</strong></div>
+          <div><span>演習数</span><strong id="sum-questions">0</strong></div>
+          <div><span>自信○</span><strong id="sum-confident">0</strong></div>
+          <div><span>迷い○</span><strong id="sum-uncertain">0</strong></div>
+          <div><span>誤答</span><strong id="sum-errors">0</strong></div>
+          <div><span>時間</span><strong id="sum-minutes">0分</strong></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">日単位情報</p>
+            <h2>睡眠・集中度</h2>
+          </div>
+        </div>
+        <div class="form-grid three">
+          <label>睡眠時間（時間）<input id="sleep-hours" type="number" inputmode="decimal" min="0" max="24" step="0.25" placeholder="任意"></label>
+          <label>集中度<select id="concentration"><option value="">未入力</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+          <label class="span-two">日全体メモ<textarea id="daily-note" rows="2" placeholder="体調、計画変更、学習できなかった理由など（任意）"></textarea></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">学習ブロック</p>
+            <h2>演習・解説・口頭再生を一体で記録</h2>
+          </div>
+          <button id="add-block" class="secondary">＋追加</button>
+        </div>
+        <p class="hint">原則1ブロック＝1日×科目×分野×演習区分。事前想起、問題演習、解説処理、原因分類、口頭再生を同じブロックにまとめます。</p>
+        <div id="blocks"></div>
+        <p id="blocks-empty" class="empty-message">まだ学習ブロックはありません。</p>
+      </section>
+
+      <section class="card" id="quick-notes-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">高速追記</p>
+            <h2>学習中メモ</h2>
+          </div>
+        </div>
+        <div class="quick-note-form">
+          <select id="quick-note-type" aria-label="メモ分類"></select>
+          <textarea id="quick-note-text" rows="2" placeholder="欠損知識や迷った点を入力。スマホの音声入力も利用できます。"></textarea>
+          <button id="add-quick-note" class="secondary">メモを追加</button>
+        </div>
+        <div id="quick-notes"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ログ確定</p>
+            <h2>ChatGPT・Excel更新用ログ</h2>
+          </div>
+        </div>
+        <label>
+          次回計画対象日
+          <input id="plan-target-date" type="date">
+        </label>
+        <p class="hint">「最後の学習日＋1日」ではなく、この絶対日付をChatGPTへ渡します。</p>
+        <div class="button-row">
+          <button id="finalize-record" class="primary">ログを確定</button>
+          <button id="copy-log" class="secondary" disabled>ログをコピー</button>
+          <button id="open-chatgpt" class="ghost" disabled>ChatGPTを開く</button>
+        </div>
+        <textarea id="generated-log" class="log-output" rows="18" readonly placeholder="確定後にログが表示されます。"></textarea>
+        <div class="danger-zone">
+          <button id="reopen-record" class="ghost hidden">修正のため再開</button>
+          <button id="delete-record" class="danger">この端末の当日データを削除</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <template id="block-template">
+    <article class="block-card">
+      <div class="block-header">
+        <h3 class="block-title"></h3>
+        <div class="button-row compact">
+          <button class="duplicate-block ghost" type="button">複製</button>
+          <button class="delete-block danger-text" type="button">削除</button>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <label>科目<select data-field="subjectId"></select></label>
+        <label>正式分野名<input data-field="field" type="text" placeholder="候補から選択、または入力"><datalist class="field-options"></datalist></label>
+        <label>教材名<select data-field="materialName"></select></label>
+        <label>教材版<input data-field="materialVersion" type="text" placeholder="例：2026、最新版"></label>
+        <label>演習区分<select data-field="exerciseTypeId"></select></label>
+        <label>QBモード<select data-field="qbMode"></select></label>
+        <label>問題範囲<input data-field="questionRange" type="text" placeholder="例：QB指定の1周目問題、問1〜20"></label>
+        <label>過去接触状況<select data-field="priorExposureStatusId"></select></label>
+      </div>
+
+      <details class="result-details">
+        <summary>演習結果（6分類）</summary>
+        <div class="form-grid result-grid">
+          <label>演習数<input data-field="questionCount" type="number" inputmode="numeric" min="0"></label>
+          <label>自信あり正解<input data-field="confidentCorrect" type="number" inputmode="numeric" min="0"></label>
+          <label>迷い正解<input data-field="uncertainCorrect" type="number" inputmode="numeric" min="0"></label>
+          <label>知識不足誤答<input data-field="errorKnowledge" type="number" inputmode="numeric" min="0"></label>
+          <label>推論ミス<input data-field="errorReasoning" type="number" inputmode="numeric" min="0"></label>
+          <label>読み落とし<input data-field="errorReading" type="number" inputmode="numeric" min="0"></label>
+          <label>その他誤答<input data-field="errorOther" type="number" inputmode="numeric" min="0"></label>
+          <label>高確信誤答数<input data-field="highConfidenceErrorCount" type="number" inputmode="numeric" min="0"></label>
+          <label>未演習問題数<input data-field="unattemptedQuestionCount" type="number" inputmode="numeric" min="0"></label>
+          <label>未演習正解数<input data-field="unattemptedCorrectCount" type="number" inputmode="numeric" min="0"></label>
+          <label>所要時間（分）<input data-field="durationMinutes" type="number" inputmode="numeric" min="0"></label>
+        </div>
+        <div class="result-actions">
+          <button class="fill-confident secondary" type="button">未分類分を自信あり正解へ</button>
+          <button class="fill-unattempted ghost" type="button">未演習数＝演習数</button>
+          <button class="reset-results ghost" type="button">結果分類を0へ戻す</button>
+        </div>
+        <div class="derived-row">
+          <span>総正解 <strong class="derived-total-correct">0</strong></span>
+          <span>総誤答 <strong class="derived-total-errors">0</strong></span>
+          <span>6分類合計 <strong class="derived-classified-total">0</strong></span>
+          <span>未分類 <strong class="derived-remainder">0</strong></span>
+        </div>
+      </details>
+
+      <details open>
+        <summary>欠損知識・口頭再生・Anki候補</summary>
+        <label>欠損知識（重要上位3項目、1行1項目）<textarea data-field="knowledgeGaps" rows="4" placeholder="1. ...&#10;2. ...&#10;3. ..."></textarea></label>
+        <div class="form-grid">
+          <label>口頭再生結果<select data-field="oralRecallStatus"></select></label>
+          <label>口頭再生メモ<textarea data-field="oralRecallNotes" rows="3" placeholder="再生できなかった論点、安全課題など"></textarea></label>
+        </div>
+        <label>Anki候補<textarea data-field="ankiCandidates" rows="3" placeholder="候補だけを記録。新規・修正・不採用はChatGPTが判断します。"></textarea></label>
+        <label>自由メモ<textarea data-field="notes" rows="3" placeholder="状態、教材確認事項、次回注意点など"></textarea></label>
+      </details>
+      <div class="validation-message" aria-live="polite"></div>
+    </article>
+  </template>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>
