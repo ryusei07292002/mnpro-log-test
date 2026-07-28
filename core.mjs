@@ -57,7 +57,14 @@ export function createStudyDayRecord({ config, studyDate, now = new Date() }) {
     planTargetDateManual: false,
     status: "open",
     dailyContext: {
+      noStudyDay: false,
       dailyNote: ""
+    },
+    nextPlanConditions: {
+      confirmedStudyWindows: "",
+      optionalStudyWindows: "",
+      fixedConstraints: "",
+      bedtimePreparationStart: ""
     },
     blocks: [],
     quickNotes: [],
@@ -118,7 +125,11 @@ export function hasMeaningfulStudyData(record) {
   if (!record || typeof record !== "object") return false;
   if (Array.isArray(record.blocks) && record.blocks.length > 0) return true;
   if (Array.isArray(record.quickNotes) && record.quickNotes.length > 0) return true;
+  if (record.dailyContext?.noStudyDay === true) return true;
   if (String(record.dailyContext?.dailyNote ?? "").trim()) return true;
+  const nextPlan = record.nextPlanConditions ?? {};
+  if ([nextPlan.confirmedStudyWindows, nextPlan.optionalStudyWindows, nextPlan.fixedConstraints, nextPlan.bedtimePreparationStart]
+    .some((value) => String(value ?? "").trim())) return true;
   return false;
 }
 
@@ -140,7 +151,14 @@ export function migrateRecord(input, config) {
   record.revision = Number(record.revision) || 0;
   record.status = record.status === "finalized" ? "finalized" : "open";
   record.dailyContext = {
+    noStudyDay: record.dailyContext?.noStudyDay === true,
     dailyNote: String(record.dailyContext?.dailyNote ?? "")
+  };
+  record.nextPlanConditions = {
+    confirmedStudyWindows: String(record.nextPlanConditions?.confirmedStudyWindows ?? ""),
+    optionalStudyWindows: String(record.nextPlanConditions?.optionalStudyWindows ?? ""),
+    fixedConstraints: String(record.nextPlanConditions?.fixedConstraints ?? ""),
+    bedtimePreparationStart: String(record.nextPlanConditions?.bedtimePreparationStart ?? "")
   };
   record.blocks = Array.isArray(record.blocks) ? record.blocks : [];
   record.quickNotes = Array.isArray(record.quickNotes) ? record.quickNotes : [];
@@ -487,6 +505,7 @@ function oralRecallLogLines(block) {
 export function generateLog(record) {
   const summary = summarizeRecord(record);
   const context = record.dailyContext ?? {};
+  const nextPlan = record.nextPlanConditions ?? {};
   const lines = [
     "【医師国家試験Pro 学習ログ】",
     "",
@@ -500,10 +519,17 @@ export function generateLog(record) {
     `実際の開始日時：${record.startedAt}`,
     `実際の終了日時：${record.endedAt ?? "未確定"}`,
     `ログ確定日時：${record.finalizedAt ?? "未確定"}`,
-    `次回計画対象日：${record.planTargetDate}`,
     "",
     "【日単位情報】",
+    `学習実績：${context.noStudyDay === true ? "なし（計画修正のみ）" : "あり"}`,
     `日全体メモ：${valueOrNone(context.dailyNote)}`,
+    "",
+    "【次回学習条件】",
+    `次回計画対象日：${record.planTargetDate}`,
+    `確実に学習へ使える時間帯：${valueOrNone(nextPlan.confirmedStudyWindows)}`,
+    `追加で使える可能性がある時間帯：${valueOrNone(nextPlan.optionalStudyWindows)}`,
+    `固定予定・学習上の制約：${valueOrNone(nextPlan.fixedConstraints)}`,
+    `就寝準備開始時刻：${valueOrNone(nextPlan.bedtimePreparationStart)}`,
     "",
     "【当日集計】",
     `学習ブロック数：${record.blocks.length}`,
@@ -572,6 +598,7 @@ export function generateLog(record) {
     "・演習数は、自信あり正解・迷い正解・知識不足誤答・推論ミス・読み落とし・その他誤答の合計とする。",
     "・総正解、各率、分類整合チェックはExcel数式または計算で更新する。",
     "・日全体メモは同一学習日の最初の行だけへ入力し、重複入力しない。",
+    "・『学習実績：なし（計画修正のみ）』の場合は01_日次ログへ0件行を追加せず、07_日別スケジュールの未実施判定と再配分だけを行う。",
     "・コメント／欠損知識メモには、問題範囲、過去接触状況、欠損知識、高確信誤答、口頭再生、このブロックの補足を簡潔に統合する。",
     "",
     "【進捗・判定規則】",
@@ -581,13 +608,18 @@ export function generateLog(record) {
     "・過去接触不明の問題セットは、再活性化または暫定安定の判定にのみ使用する。",
     "・同じ問題セットを、通常ブロックと混合問題の両方へ重複記載しない。",
     "・高確信誤答、安全課題、口頭再生△・×を優先して弱点・復習予定へ反映する。",
-    "・欠損知識、高確信誤答、口頭再生△・×から、Anki化の要否、新規カード、既存カード修正、不採用を判断する。",
+    "・欠損知識、高確信誤答、口頭再生△・×から、利用者設定に従って適切な定着方法を判断する。Anki使用者ではExcel内の06_Anki管理を照合する。",
     "",
     "【日時・重複処理規則】",
     `・すべての学習ブロックを学習日${record.studyDate}の実績として処理する。`,
     "・終了日時が翌日でもログを日付で分割しない。",
     "・学習実績が存在しない日は0件ログを作らず、計画表との比較で未実施日として判定する。",
     `・次回計画は${record.planTargetDate}を対象とし、最終学習日＋1日から推定しない。`,
+    "・基本計画は『確実に学習へ使える時間帯』の範囲内だけで作成する。",
+    "・追加可能時間には条件付きブロックだけを置き、使えなくても遅延扱いにしない。",
+    "・固定予定と就寝準備開始時刻を侵害しない。",
+    "・時間条件が未入力または『未定』なら、正確な開始・終了時刻を推測せず、優先順位と所要時間の目安だけを示す。",
+    "・次回計画は必須・標準・条件付きの3層に分け、各ブロックへ問題数、制限時間、終了条件、必要時は省略条件を付ける。",
     "・同じ学習日レコードIDかつ同じリビジョンが登録済みなら重複追加しない。",
     "・同じ学習日レコードIDで新しいリビジョンなら、既存記録を更新する。",
     "",
@@ -595,7 +627,7 @@ export function generateLog(record) {
     "・Excel台帳の該当シートを更新する。",
     "・欠損知識を既存弱点と統合し、重複を除去する。",
     "・高確信誤答と安全課題を最優先で処理する。",
-    "・口頭再生課題、Anki採否、復習時期、次に行う科目・分野・問題数を具体的に決定する。",
+    "・口頭再生課題、定着方法、復習時期、次に行う科目・分野・問題数を具体的に決定する。",
     "・学習空白日や計画遅延があれば、絶対日付に基づいて残り計画を再配分する。"
   );
 

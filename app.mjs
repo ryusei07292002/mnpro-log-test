@@ -63,8 +63,11 @@ const elements = {
   discardEmptyRecord: $("#discard-empty-record"),
   blocks: $("#blocks"), blocksEmpty: $("#blocks-empty"), addBlock: $("#add-block"),
   quickNoteType: $("#quick-note-type"), quickNoteText: $("#quick-note-text"), addQuickNote: $("#add-quick-note"), quickNotes: $("#quick-notes"),
-  dailyNote: $("#daily-note"),
-  planTargetDate: $("#plan-target-date"), finalizeRecord: $("#finalize-record"), copyLog: $("#copy-log"),
+  noStudyDay: $("#no-study-day"), dailyNote: $("#daily-note"),
+  planTargetDate: $("#plan-target-date"), confirmedStudyWindows: $("#confirmed-study-windows"),
+  optionalStudyWindows: $("#optional-study-windows"), fixedConstraints: $("#fixed-constraints"),
+  bedtimePreparationStart: $("#bedtime-preparation-start"),
+  finalizeRecord: $("#finalize-record"), copyLog: $("#copy-log"),
   openChatgpt: $("#open-chatgpt"), generatedLog: $("#generated-log"), reopenRecord: $("#reopen-record"), deleteRecord: $("#delete-record"),
   toast: $("#toast"), sumBlocks: $("#sum-blocks"), sumQuestions: $("#sum-questions"), sumConfident: $("#sum-confident"),
   sumUncertain: $("#sum-uncertain"), sumErrors: $("#sum-errors"), sumMinutes: $("#sum-minutes"), blockTemplate: $("#block-template"),
@@ -243,7 +246,12 @@ function render() {
   elements.statusChip.textContent = record.status === "finalized" ? `確定済 v${record.revision}` : "入力中";
   elements.statusChip.dataset.status = record.status;
   elements.planTargetDate.value = record.planTargetDate || addDays(record.studyDate, 1);
+  elements.noStudyDay.checked = record.dailyContext?.noStudyDay === true;
   elements.dailyNote.value = record.dailyContext.dailyNote ?? "";
+  elements.confirmedStudyWindows.value = record.nextPlanConditions?.confirmedStudyWindows ?? "";
+  elements.optionalStudyWindows.value = record.nextPlanConditions?.optionalStudyWindows ?? "";
+  elements.fixedConstraints.value = record.nextPlanConditions?.fixedConstraints ?? "";
+  elements.bedtimePreparationStart.value = record.nextPlanConditions?.bedtimePreparationStart ?? "";
   const hasStudyData = hasMeaningfulStudyData(record);
   elements.discardEmptyRecord.classList.toggle("hidden", hasStudyData || record.status === "finalized");
   elements.deleteRecord.textContent = hasStudyData
@@ -264,7 +272,8 @@ function render() {
 
   const isFinalized = record.status === "finalized";
   [elements.addBlock, elements.addQuickNote, elements.quickNoteText, elements.quickNoteType,
-    elements.dailyNote, elements.finalizeRecord]
+    elements.noStudyDay, elements.dailyNote, elements.planTargetDate, elements.confirmedStudyWindows, elements.optionalStudyWindows,
+    elements.fixedConstraints, elements.bedtimePreparationStart, elements.finalizeRecord]
     .forEach((element) => { element.disabled = isFinalized; });
   elements.reopenRecord.classList.toggle("hidden", !isFinalized);
   elements.copyLog.disabled = !isFinalized;
@@ -704,7 +713,12 @@ function duplicateUnitWarnings() {
 }
 
 function finalizeCurrentRecord() {
-  if (record.blocks.length === 0 && record.quickNotes.length === 0) return showToast("学習ブロックまたはメモを1件以上追加してください。");
+  if (record.dailyContext?.noStudyDay === true && record.blocks.length > 0) {
+    return alert("『本日は学習なし』と学習ブロックを同時に登録できません。どちらかを修正してください。");
+  }
+  if (record.dailyContext?.noStudyDay !== true && record.blocks.length === 0 && record.quickNotes.length === 0) {
+    return showToast("学習ブロックまたはメモを1件以上追加するか、『本日は学習なし』を選択してください。");
+  }
   const errors = validateAllBlocks();
   if (errors.length) return alert(`確定できません。\n\n${errors.join("\n")}`);
   const warnings = duplicateUnitWarnings();
@@ -846,10 +860,33 @@ function deleteCurrentRecord() {
 }
 
 function bindDailyContext() {
+  elements.noStudyDay.addEventListener("change", () => {
+    if (!record) return;
+    record.dailyContext.noStudyDay = elements.noStudyDay.checked;
+    saveRecord();
+  });
   elements.dailyNote.addEventListener("input", () => {
     if (!record) return;
     record.dailyContext.dailyNote = elements.dailyNote.value;
     saveRecord();
+  });
+}
+
+function bindNextPlanConditions() {
+  const bindings = [
+    [elements.confirmedStudyWindows, "confirmedStudyWindows"],
+    [elements.optionalStudyWindows, "optionalStudyWindows"],
+    [elements.fixedConstraints, "fixedConstraints"],
+    [elements.bedtimePreparationStart, "bedtimePreparationStart"]
+  ];
+  bindings.forEach(([element, key]) => {
+    const eventName = element.type === "time" ? "change" : "input";
+    element.addEventListener(eventName, () => {
+      if (!record) return;
+      record.nextPlanConditions ??= {};
+      record.nextPlanConditions[key] = element.value;
+      saveRecord();
+    });
   });
 }
 
@@ -924,6 +961,7 @@ function init() {
   elements.addBlock.addEventListener("click", addBlock);
   elements.addQuickNote.addEventListener("click", addQuickNote);
   bindDailyContext();
+  bindNextPlanConditions();
   elements.planTargetDate.addEventListener("change", () => {
     if (!record) return;
     record.planTargetDate = elements.planTargetDate.value;

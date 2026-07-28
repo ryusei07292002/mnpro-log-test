@@ -218,3 +218,14 @@ summary { cursor: pointer; font-weight: 800; color: var(--blue); padding: 8px 0;
 }
 
 /* v0.3.3: 空学習日の破棄・初期画面復帰 */
+
+
+/* v0.4.0: 次回学習条件 */
+.next-plan-card textarea { min-height: 84px; }
+.next-plan-card input[type="time"] { min-height: 44px; }
+@media (max-width: 680px) {
+  .next-plan-card .form-grid { grid-template-columns: 1fr; }
+}
+
+.check-label { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
+.check-label input { width: auto; min-width: 20px; min-height: 20px; }

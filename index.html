@@ -19,7 +19,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.3.3</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.4.0</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -108,6 +108,8 @@
             <h2>日全体メモ</h2>
           </div>
         </div>
+        <label class="check-label"><input id="no-study-day" type="checkbox">本日は学習なし（計画修正のみ）</label>
+        <p class="hint">チェックした日は01_日次ログへ0件行を作らず、予定未実施と次回計画の再配分だけを依頼します。</p>
         <label>計画変更・学習できなかった理由など<textarea id="daily-note" rows="2" placeholder="必要な場合だけ入力してください（任意）"></textarea></label>
       </section>
 
@@ -139,6 +141,29 @@
         <div id="quick-notes"></div>
       </section>
 
+      <section class="card next-plan-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">次回計画</p>
+            <h2>次回学習条件</h2>
+          </div>
+        </div>
+        <p class="hint">時刻を決められる範囲だけ入力してください。未入力の条件をChatGPTが推測して時刻割当しないよう、ログへ明示します。</p>
+        <div class="form-grid">
+          <label>
+            次回計画対象日
+            <input id="plan-target-date" type="date">
+          </label>
+          <label>
+            就寝準備開始時刻
+            <input id="bedtime-preparation-start" type="time">
+          </label>
+        </div>
+        <label>確実に学習へ使える時間帯<textarea id="confirmed-study-windows" rows="3" placeholder="例：10:00〜12:00&#10;14:00〜18:00&#10;20:00〜23:00"></textarea></label>
+        <label>追加で使える可能性がある時間帯<textarea id="optional-study-windows" rows="2" placeholder="例：08:00〜10:00（使えなくても遅延扱いにしない）"></textarea></label>
+        <label>固定予定・学習上の制約<textarea id="fixed-constraints" rows="3" placeholder="例：13:00〜14:00 病院&#10;19:00〜20:00 夕食&#10;移動中は口頭再生のみ可"></textarea></label>
+      </section>
+
       <section class="card">
         <div class="section-heading">
           <div>
@@ -146,11 +171,6 @@
             <h2>ChatGPT・Excel更新用ログ</h2>
           </div>
         </div>
-        <label>
-          次回計画対象日
-          <input id="plan-target-date" type="date">
-        </label>
-        <p class="hint">「最後の学習日＋1日」ではなく、この絶対日付をChatGPTへ渡します。</p>
         <div class="button-row">
           <button id="finalize-record" class="primary">ログを確定</button>
           <button id="copy-log" class="secondary" disabled>ログをコピー</button>

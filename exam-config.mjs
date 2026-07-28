@@ -4,8 +4,8 @@ export const EXAM_CONFIG = {
   edition: "pro",
   appName: "国試AI学習ログ",
   studyDayBoundaryHour: 5,
-  storageSchemaVersion: 5,
-  appVersion: "0.3.3",
+  storageSchemaVersion: 6,
+  appVersion: "0.4.0",
 
   subjects: [
     {
@@ -84,7 +84,7 @@ export const EXAM_CONFIG = {
     { id: "not-applicable", label: "該当なし" }
   ],
   oralRecallStatuses: ["未実施", "○", "△", "×"],
-  quickNoteTypes: ["欠損知識", "迷った知識", "高確信誤答", "推論ミス", "読み落とし", "Anki候補", "口頭再生候補", "安全課題", "自由メモ"],
+  quickNoteTypes: ["欠損知識", "迷った知識", "高確信誤答", "推論ミス", "読み落とし", "口頭再生候補", "安全課題", "自由メモ"],
 
   rules: {
     maxKnowledgeGapsPerBlock: 3,

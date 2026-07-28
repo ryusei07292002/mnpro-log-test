@@ -1,4 +1,4 @@
-const CACHE_NAME = "medical-national-pro-log-v033";
+const CACHE_NAME = "medical-national-pro-log-v040";
 const ASSETS = [
   "./",
   "./index.html",
