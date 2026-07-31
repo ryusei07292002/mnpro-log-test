@@ -19,7 +19,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.5.0</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.6.0</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -173,6 +173,11 @@
             就寝準備開始時刻
             <input id="bedtime-preparation-start" type="time">
           </label>
+          <label>
+            計画ペース倍率
+            <input id="plan-pace-multiplier" type="number" inputmode="decimal" min="1" max="2" step="0.1" value="1.5">
+            <span class="field-hint">1.5＝従来想定の約2/3時間、または同じ時間で約1.5倍の学習量</span>
+          </label>
         </div>
         <label>確実に学習へ使える時間帯<textarea id="confirmed-study-windows" rows="3" placeholder="例：10:00〜12:00&#10;14:00〜18:00&#10;20:00〜23:00"></textarea></label>
         <label>追加で使える可能性がある時間帯<textarea id="optional-study-windows" rows="2" placeholder="例：08:00〜10:00（使えなくても遅延扱いにしない）"></textarea></label>
@@ -262,6 +267,24 @@
         </div>
       </details>
 
+      <section class="time-tracking-section">
+        <div class="subsection-heading">
+          <div>
+            <strong>ブロック時間</strong>
+            <p class="hint">「今を開始」「今を終了」で端末の現在日時を記録します。押し忘れた場合は日時を手入力できます。</p>
+          </div>
+        </div>
+        <div class="time-tracking-grid">
+          <label>開始日時<input data-field="startedAt" type="datetime-local"></label>
+          <button class="stamp-start secondary" type="button">今を開始</button>
+          <label>終了日時<input data-field="endedAt" type="datetime-local"></label>
+          <button class="stamp-end secondary" type="button">今を終了</button>
+          <label>所要時間（分）<input data-field="durationMinutes" type="number" inputmode="numeric" min="0"></label>
+          <button class="recalculate-duration ghost" type="button">時刻から再計算</button>
+        </div>
+        <p class="timing-status hint">未計測</p>
+      </section>
+
       <details class="result-details">
         <summary>演習結果（6分類）</summary>
         <div class="form-grid result-grid">
@@ -274,7 +297,6 @@
           <label>その他誤答<input data-field="errorOther" type="number" inputmode="numeric" min="0"></label>
           <label class="unattempted-field">未演習問題数<input data-field="unattemptedQuestionCount" type="number" inputmode="numeric" min="0"></label>
           <label class="unattempted-field">未演習正解数<input data-field="unattemptedCorrectCount" type="number" inputmode="numeric" min="0"></label>
-          <label>所要時間（分）<input data-field="durationMinutes" type="number" inputmode="numeric" min="0"></label>
         </div>
         <div class="result-actions">
           <button class="fill-confident secondary" type="button">未分類分を自信あり正解へ</button>

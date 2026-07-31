@@ -4,8 +4,8 @@ export const EXAM_CONFIG = {
   edition: "pro",
   appName: "国試AI学習ログ",
   studyDayBoundaryHour: 5,
-  storageSchemaVersion: 7,
-  appVersion: "0.5.0",
+  storageSchemaVersion: 8,
+  appVersion: "0.6.0",
 
   subjects: [
     {

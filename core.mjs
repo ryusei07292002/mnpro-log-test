@@ -12,6 +12,37 @@ export function localDateTimeString(date = new Date()) {
   return `${localDateString(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}${offset}`;
 }
 
+
+export function datetimeLocalValue(date = new Date()) {
+  return `${localDateString(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+export function calculateDurationMinutes(startedAt, endedAt) {
+  if (!startedAt || !endedAt) return null;
+  const start = new Date(startedAt);
+  const end = new Date(endedAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) return null;
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+}
+
+export function blockTimingInfo(block) {
+  const calculatedMinutes = calculateDurationMinutes(block?.startedAt, block?.endedAt);
+  const recordedMinutes = Number(block?.durationMinutes) || 0;
+  const startMethod = String(block?.startTimeInputMethod ?? 'none');
+  const endMethod = String(block?.endTimeInputMethod ?? 'none');
+  let method = '未計測';
+  let reliability = '低';
+  if (block?.startedAt && block?.endedAt && calculatedMinutes !== null) {
+    method = startMethod === 'tap' && endMethod === 'tap' ? 'ワンタップ計測' : '時刻手入力を含む';
+    const mismatch = Math.abs(calculatedMinutes - recordedMinutes);
+    reliability = mismatch <= 2 ? (method === 'ワンタップ計測' ? '高' : '中') : '低';
+  } else if (recordedMinutes > 0) {
+    method = '所要時間のみ';
+    reliability = '低';
+  }
+  return { calculatedMinutes, recordedMinutes, method, reliability };
+}
+
 export function addDays(dateString, days) {
   const [year, month, day] = dateString.split("-").map(Number);
   const value = new Date(year, month - 1, day, 12, 0, 0);
@@ -64,7 +95,8 @@ export function createStudyDayRecord({ config, studyDate, now = new Date() }) {
       confirmedStudyWindows: "",
       optionalStudyWindows: "",
       fixedConstraints: "",
-      bedtimePreparationStart: ""
+      bedtimePreparationStart: "",
+      paceMultiplier: 1.5
     },
     ankiReport: {
       status: "no-instruction",
@@ -112,6 +144,11 @@ export function createEmptyBlock(now = new Date()) {
     errorReading: 0,
     errorOther: 0,
     highConfidenceErrors: [],
+    startedAt: "",
+    endedAt: "",
+    startTimeInputMethod: "none",
+    endTimeInputMethod: "none",
+    durationInputMethod: "none",
     durationMinutes: 0,
     knowledgeGaps: "",
     oralRecallTasks: [],
@@ -177,7 +214,8 @@ export function migrateRecord(input, config) {
     confirmedStudyWindows: String(record.nextPlanConditions?.confirmedStudyWindows ?? ""),
     optionalStudyWindows: String(record.nextPlanConditions?.optionalStudyWindows ?? ""),
     fixedConstraints: String(record.nextPlanConditions?.fixedConstraints ?? ""),
-    bedtimePreparationStart: String(record.nextPlanConditions?.bedtimePreparationStart ?? "")
+    bedtimePreparationStart: String(record.nextPlanConditions?.bedtimePreparationStart ?? ""),
+    paceMultiplier: Number(record.nextPlanConditions?.paceMultiplier) || 1.5
   };
   record.ankiReport = {
     status: String(record.ankiReport?.status ?? "no-instruction"),
@@ -213,7 +251,12 @@ export function migrateRecord(input, config) {
     const migratedBlock = {
       ...createEmptyBlock(),
       ...block,
-      blockId: block?.blockId || createId("block")
+      blockId: block?.blockId || createId("block"),
+      startedAt: String(block?.startedAt ?? ""),
+      endedAt: String(block?.endedAt ?? ""),
+      startTimeInputMethod: String(block?.startTimeInputMethod ?? (block?.startedAt ? "manual" : "none")),
+      endTimeInputMethod: String(block?.endTimeInputMethod ?? (block?.endedAt ? "manual" : "none")),
+      durationInputMethod: String(block?.durationInputMethod ?? ((Number(block?.durationMinutes) || 0) > 0 ? "legacy-unknown" : "none"))
     };
 
     const existingHighConfidenceErrors = Array.isArray(block?.highConfidenceErrors) ? block.highConfidenceErrors : [];
@@ -354,6 +397,19 @@ export function validateBlock(block, config = null) {
     if (!Number.isFinite(Number(block[key])) || Number(block[key]) < 0) {
       errors.push(`${key}は0以上の数値にしてください。`);
     }
+  }
+
+  const timing = blockTimingInfo(block);
+  if ((block.startedAt && !block.endedAt) || (!block.startedAt && block.endedAt)) {
+    warnings.push("開始日時または終了日時の片方だけが入力されています。所要時間を確認してください。");
+  }
+  if (block.startedAt && block.endedAt && timing.calculatedMinutes === null) {
+    errors.push("終了日時は開始日時以後にしてください。");
+  }
+  if (timing.calculatedMinutes !== null && Math.abs(timing.calculatedMinutes - timing.recordedMinutes) > 2) {
+    warnings.push("開始・終了時刻からの計算時間と所要時間が一致していません。速度推定では低信頼として扱います。");
+  } else if (timing.method === "所要時間のみ" && timing.recordedMinutes > 0) {
+    warnings.push("開始・終了時刻がないため、この所要時間は速度推定では低信頼として扱います。");
   }
 
   if (!block.subjectId && !block.subjectName) errors.push("科目を選択してください。");
@@ -636,6 +692,8 @@ export function generateLog(record) {
     `追加で使える可能性がある時間帯：${valueOrNone(nextPlan.optionalStudyWindows)}`,
     `固定予定・学習上の制約：${valueOrNone(nextPlan.fixedConstraints)}`,
     `就寝準備開始時刻：${valueOrNone(nextPlan.bedtimePreparationStart)}`,
+    `計画ペース倍率：${Number(nextPlan.paceMultiplier) || 1.5}倍`,
+    `計画時間換算：従来想定時間の約${Math.round(100 / (Number(nextPlan.paceMultiplier) || 1.5))}%を目標とする（安全課題・必要地図化は質的条件を優先）`,
     "",
     "【当日集計】",
     `学習ブロック数：${record.blocks.length}`,
@@ -682,6 +740,11 @@ export function generateLog(record) {
       `未演習正答率：${percent(Number(block.unattemptedCorrectCount) || 0, Number(block.unattemptedQuestionCount) || 0)}`,
       `正式な未演習判定に使用可能：${formalUnseen ? "はい" : "いいえ"}`,
       `1周目進捗へ加算：${firstRound ? "はい" : "いいえ"}`,
+      `ブロック開始日時：${valueOrNone(block.startedAt)}`,
+      `ブロック終了日時：${valueOrNone(block.endedAt)}`,
+      `時間記録方法：${blockTimingInfo(block).method}`,
+      `時間信頼度：${blockTimingInfo(block).reliability}`,
+      `時刻差による計算時間：${blockTimingInfo(block).calculatedMinutes === null ? "算出不可" : `${blockTimingInfo(block).calculatedMinutes}分`}`,
       `所要時間：${Number(block.durationMinutes) || 0}分`,
       `欠損知識（重要上位3項目）：${valueOrNone(block.knowledgeGaps)}`,
       ...oralRecallLogLines(block),
@@ -704,6 +767,9 @@ export function generateLog(record) {
     "・各実績ブロックの主目的を『形成』『再診断』『補修』『転移確認』『維持』から判定し、01_日次ログZ列『目的プロトコル』へ記録する。",
     "・教材名を01_日次ログAA列『教材』へ記録する。",
     "・01_日次ログAB列『実測処理速度(分/問)』は学習時間÷演習数で更新し、演習数0では空欄にする。推測値を入れない。",
+    "・01_日次ログにAC開始日時、AD終了日時、AE時間記録方法、AF時間信頼度がなければ追加し、Webログの値を保存する。",
+    "・速度推定は時間信頼度『高』『中』を優先し、『低』および旧データで記録方法不明の行は原則除外する。",
+    "・利用者申告により従来の所要時間入力には推測値が混在するため、v0.6.0導入前の実測速度中央値をそのまま次回計画の根拠にしない。",
     "・目的プロトコルは予定ではなく実際の主目的で判定する。目的が明確に分かれ、実績を分離できる場合は別行にする。",
     "・演習数は、自信あり正解・迷い正解・知識不足誤答・推論ミス・読み落とし・その他誤答の合計とする。",
     "・総正解、各率、分類整合チェックはExcel数式または計算で更新する。",
@@ -730,6 +796,9 @@ export function generateLog(record) {
     "・学習実績が存在しない日は0件ログを作らず、計画表との比較で未実施日として判定する。",
     `・次回計画は${record.planTargetDate}を対象とし、最終学習日＋1日から推定しない。`,
     "・基本計画は『確実に学習へ使える時間帯』の範囲内だけで作成する。",
+    "・計画ペース倍率を反映し、1.5倍なら従来想定時間を約2/3へ圧縮するか、同じ時間枠へ約1.5倍の学習量を配置する。",
+    "・1.5倍は急いで解くことを強制する締切ではなく、計画量を多めに置く補正である。安全課題、初学地図化、口頭再生の質的終了条件は削らない。",
+    "・予定より早く終わった場合は次の必須・標準ブロックを待たずに前倒しし、前倒し候補を1～2個用意する。",
     "・追加可能時間には条件付きブロックだけを置き、使えなくても遅延扱いにしない。",
     "・固定予定と就寝準備開始時刻を侵害しない。",
     "・時間条件が未入力または『未定』なら、正確な開始・終了時刻を推測せず、優先順位と所要時間の目安だけを示す。",

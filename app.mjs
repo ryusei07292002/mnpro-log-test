@@ -7,6 +7,9 @@ import {
   createEmptyHighConfidenceError,
   createEmptyOralRecallTask,
   createId,
+  calculateDurationMinutes,
+  datetimeLocalValue,
+  blockTimingInfo,
   createStudyDayRecord,
   finalizeRecord,
   generateLog,
@@ -72,7 +75,7 @@ const elements = {
   weeklyFillZero: $("#weekly-fill-zero"), weeklyClear: $("#weekly-clear"), weeklyReviewValidation: $("#weekly-review-validation"),
   planTargetDate: $("#plan-target-date"), confirmedStudyWindows: $("#confirmed-study-windows"),
   optionalStudyWindows: $("#optional-study-windows"), fixedConstraints: $("#fixed-constraints"),
-  bedtimePreparationStart: $("#bedtime-preparation-start"),
+  bedtimePreparationStart: $("#bedtime-preparation-start"), planPaceMultiplier: $("#plan-pace-multiplier"),
   finalizeRecord: $("#finalize-record"), copyLog: $("#copy-log"),
   openChatgpt: $("#open-chatgpt"), generatedLog: $("#generated-log"), reopenRecord: $("#reopen-record"), deleteRecord: $("#delete-record"),
   toast: $("#toast"), sumBlocks: $("#sum-blocks"), sumQuestions: $("#sum-questions"), sumConfident: $("#sum-confident"),
@@ -267,6 +270,7 @@ function render() {
   elements.optionalStudyWindows.value = record.nextPlanConditions?.optionalStudyWindows ?? "";
   elements.fixedConstraints.value = record.nextPlanConditions?.fixedConstraints ?? "";
   elements.bedtimePreparationStart.value = record.nextPlanConditions?.bedtimePreparationStart ?? "";
+  elements.planPaceMultiplier.value = record.nextPlanConditions?.paceMultiplier ?? 1.5;
   const hasStudyData = hasMeaningfulStudyData(record);
   elements.discardEmptyRecord.classList.toggle("hidden", hasStudyData || record.status === "finalized");
   elements.deleteRecord.textContent = hasStudyData
@@ -290,7 +294,7 @@ function render() {
     elements.noStudyDay, elements.dailyNote, elements.ankiReportStatus, elements.ankiCompletedItems, elements.ankiPendingItems, elements.ankiReportNotes,
     elements.weeklyReviewEnabled, elements.weeklyReviewDate, elements.weeklyGoalUpdate, elements.weeklyConsultationNotes, elements.weeklyFillZero, elements.weeklyClear,
     elements.planTargetDate, elements.confirmedStudyWindows, elements.optionalStudyWindows,
-    elements.fixedConstraints, elements.bedtimePreparationStart, elements.finalizeRecord]
+    elements.fixedConstraints, elements.bedtimePreparationStart, elements.planPaceMultiplier, elements.finalizeRecord]
     .forEach((element) => { element.disabled = isFinalized; });
   elements.reopenRecord.classList.toggle("hidden", !isFinalized);
   elements.copyLog.disabled = !isFinalized;
@@ -412,6 +416,13 @@ function setCardDerivedValues(card, block) {
   card.querySelector(".derived-total-errors").textContent = totals.totalErrors;
   card.querySelector(".derived-classified-total").textContent = totals.classifiedTotal;
   card.querySelector(".derived-remainder").textContent = remainder;
+  const timing = blockTimingInfo(block);
+  const status = card.querySelector(".timing-status");
+  if (status) {
+    const calculated = timing.calculatedMinutes === null ? "" : `／時刻差${timing.calculatedMinutes}分`;
+    status.textContent = `${timing.method}・信頼度${timing.reliability}${calculated}`;
+    status.className = `timing-status hint ${timing.reliability === "高" ? "ok" : "warn"}`;
+  }
 }
 
 function syncBlockInputs(card, block, fields = null) {
@@ -611,7 +622,7 @@ function renderBlocks() {
     });
 
     const disabled = record.status === "finalized";
-    [".delete-block", ".duplicate-block", ".fill-confident", ".fill-unattempted", ".reset-results"].forEach((selector) => {
+    [".delete-block", ".duplicate-block", ".fill-confident", ".fill-unattempted", ".reset-results", ".stamp-start", ".stamp-end", ".recalculate-duration"].forEach((selector) => {
       card.querySelector(selector).disabled = disabled;
     });
     card.querySelector(".delete-block").addEventListener("click", () => deleteBlock(block.blockId));
@@ -625,6 +636,9 @@ function renderBlocks() {
     card.querySelector(".fill-confident").addEventListener("click", () => fillRemainderAsConfident(block, card));
     card.querySelector(".fill-unattempted").addEventListener("click", () => fillUnattempted(block, card));
     card.querySelector(".reset-results").addEventListener("click", () => resetResultClassification(block, card));
+    card.querySelector(".stamp-start").addEventListener("click", () => stampBlockTime(block, "startedAt", card));
+    card.querySelector(".stamp-end").addEventListener("click", () => stampBlockTime(block, "endedAt", card));
+    card.querySelector(".recalculate-duration").addEventListener("click", () => recalculateBlockDuration(block, card, true));
 
     renderHighConfidenceErrors(card, block);
     renderOralRecallTasks(card, block);
@@ -646,6 +660,18 @@ function updateBlock(blockId, field, value, card) {
   const block = record.blocks.find((item) => item.blockId === blockId);
   if (!block) return;
   block[field] = numericFields.has(field) ? Number(value || 0) : value;
+
+  if (field === "startedAt") {
+    block.startTimeInputMethod = value ? "manual" : "none";
+    recalculateBlockDuration(block, card, false);
+  }
+  if (field === "endedAt") {
+    block.endTimeInputMethod = value ? "manual" : "none";
+    recalculateBlockDuration(block, card, false);
+  }
+  if (field === "durationMinutes") {
+    block.durationInputMethod = value === "" ? "none" : "manual";
+  }
 
   if (field === "subjectId") {
     block.subjectName = EXAM_CONFIG.subjects.find((subject) => subject.id === value)?.name ?? "";
@@ -669,6 +695,33 @@ function updateBlock(blockId, field, value, card) {
   setCardDerivedValues(card, block);
   updateValidationMessage(card, block);
   renderSummary();
+}
+
+function stampBlockTime(block, field, card) {
+  if (record.status === "finalized") return;
+  block[field] = datetimeLocalValue(new Date());
+  if (field === "startedAt") block.startTimeInputMethod = "tap";
+  if (field === "endedAt") block.endTimeInputMethod = "tap";
+  recalculateBlockDuration(block, card, false);
+  saveRecord();
+  syncBlockInputs(card, block, [field, "durationMinutes"]);
+  setCardDerivedValues(card, block);
+  updateValidationMessage(card, block);
+  renderSummary();
+  showToast(field === "startedAt" ? "開始日時を記録しました。" : "終了日時を記録しました。");
+}
+
+function recalculateBlockDuration(block, card, showMessage = false) {
+  const minutes = calculateDurationMinutes(block.startedAt, block.endedAt);
+  if (minutes === null) {
+    if (showMessage) alert("開始日時と終了日時を入力し、終了を開始以後にしてください。");
+    setCardDerivedValues(card, block);
+    return;
+  }
+  block.durationMinutes = minutes;
+  block.durationInputMethod = "calculated";
+  syncBlockInputs(card, block, ["durationMinutes"]);
+  if (showMessage) showToast(`時刻差から${minutes}分へ更新しました。`);
 }
 
 function fillRemainderAsConfident(block, card) {
@@ -1015,14 +1068,17 @@ function bindNextPlanConditions() {
     [elements.confirmedStudyWindows, "confirmedStudyWindows"],
     [elements.optionalStudyWindows, "optionalStudyWindows"],
     [elements.fixedConstraints, "fixedConstraints"],
-    [elements.bedtimePreparationStart, "bedtimePreparationStart"]
+    [elements.bedtimePreparationStart, "bedtimePreparationStart"],
+    [elements.planPaceMultiplier, "paceMultiplier"]
   ];
   bindings.forEach(([element, key]) => {
     const eventName = element.type === "time" ? "change" : "input";
     element.addEventListener(eventName, () => {
       if (!record) return;
       record.nextPlanConditions ??= {};
-      record.nextPlanConditions[key] = element.value;
+      record.nextPlanConditions[key] = key === "paceMultiplier"
+        ? Math.min(2, Math.max(1, Number(element.value) || 1.5))
+        : element.value;
       saveRecord();
     });
   });
