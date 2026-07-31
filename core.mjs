@@ -66,6 +66,21 @@ export function createStudyDayRecord({ config, studyDate, now = new Date() }) {
       fixedConstraints: "",
       bedtimePreparationStart: ""
     },
+    ankiReport: {
+      status: "no-instruction",
+      completedItems: "",
+      pendingItems: "",
+      notes: ""
+    },
+    weeklyReview: {
+      enabled: false,
+      reviewDate: studyDate,
+      goalUpdate: "",
+      consultationNotes: "",
+      subjectSnapshots: (config.subjects ?? []).map((subject) => ({
+        subjectId: subject.id, subjectName: subject.name, correct: null, uncertain: null, wrong: null
+      }))
+    },
     blocks: [],
     quickNotes: [],
     lastFinalizedFingerprint: null,
@@ -130,6 +145,10 @@ export function hasMeaningfulStudyData(record) {
   const nextPlan = record.nextPlanConditions ?? {};
   if ([nextPlan.confirmedStudyWindows, nextPlan.optionalStudyWindows, nextPlan.fixedConstraints, nextPlan.bedtimePreparationStart]
     .some((value) => String(value ?? "").trim())) return true;
+  const anki = record.ankiReport ?? {};
+  if (anki.status && anki.status !== "no-instruction") return true;
+  if ([anki.completedItems, anki.pendingItems, anki.notes].some((value) => String(value ?? "").trim())) return true;
+  if (record.weeklyReview?.enabled === true) return true;
   return false;
 }
 
@@ -159,6 +178,30 @@ export function migrateRecord(input, config) {
     optionalStudyWindows: String(record.nextPlanConditions?.optionalStudyWindows ?? ""),
     fixedConstraints: String(record.nextPlanConditions?.fixedConstraints ?? ""),
     bedtimePreparationStart: String(record.nextPlanConditions?.bedtimePreparationStart ?? "")
+  };
+  record.ankiReport = {
+    status: String(record.ankiReport?.status ?? "no-instruction"),
+    completedItems: String(record.ankiReport?.completedItems ?? ""),
+    pendingItems: String(record.ankiReport?.pendingItems ?? ""),
+    notes: String(record.ankiReport?.notes ?? "")
+  };
+  const existingSnapshots = Array.isArray(record.weeklyReview?.subjectSnapshots) ? record.weeklyReview.subjectSnapshots : [];
+  record.weeklyReview = {
+    enabled: record.weeklyReview?.enabled === true,
+    reviewDate: String(record.weeklyReview?.reviewDate ?? record.studyDate ?? ""),
+    goalUpdate: String(record.weeklyReview?.goalUpdate ?? ""),
+    consultationNotes: String(record.weeklyReview?.consultationNotes ?? ""),
+    subjectSnapshots: (config?.subjects ?? []).map((subject) => {
+      const existing = existingSnapshots.find((item) => item?.subjectId === subject.id || item?.subjectName === subject.name) ?? {};
+      const normalizeCount = (value) => value === null || value === undefined || value === "" ? null : Number(value);
+      return {
+        subjectId: subject.id,
+        subjectName: subject.name,
+        correct: normalizeCount(existing.correct),
+        uncertain: normalizeCount(existing.uncertain),
+        wrong: normalizeCount(existing.wrong)
+      };
+    })
   };
   record.blocks = Array.isArray(record.blocks) ? record.blocks : [];
   record.quickNotes = Array.isArray(record.quickNotes) ? record.quickNotes : [];
@@ -502,6 +545,36 @@ function oralRecallLogLines(block) {
   return lines;
 }
 
+function ankiReportLabel(status) {
+  return ({
+    "no-instruction": "本日のAnki操作指示なし",
+    "all-completed": "指示された作成・修正をすべて完了",
+    "partial": "一部だけ完了",
+    "not-completed": "指示はあったが未完了"
+  })[status] ?? status ?? "未入力";
+}
+
+function weeklySnapshotLogLines(record) {
+  const weekly = record.weeklyReview ?? {};
+  if (weekly.enabled !== true) return ["週次レビュー：実施しない"];
+  const lines = [
+    "週次レビュー：実施する",
+    `レビュー基準日：${valueOrNone(weekly.reviewDate)}`,
+    `目標・模試日の変更：${valueOrNone(weekly.goalUpdate)}`,
+    `今週の状況・相談事項：${valueOrNone(weekly.consultationNotes)}`,
+    "",
+    "【QB科目別スナップショット】",
+    "科目｜○｜△｜×｜合計"
+  ];
+  (weekly.subjectSnapshots ?? []).forEach((item) => {
+    const correct = Number(item.correct) || 0;
+    const uncertain = Number(item.uncertain) || 0;
+    const wrong = Number(item.wrong) || 0;
+    lines.push(`${item.subjectName || item.subjectId}｜${correct}｜${uncertain}｜${wrong}｜${correct + uncertain + wrong}`);
+  });
+  return lines;
+}
+
 export function generateLog(record) {
   const summary = summarizeRecord(record);
   const context = record.dailyContext ?? {};
@@ -547,6 +620,15 @@ export function generateLog(record) {
     "【日単位情報】",
     `学習実績：${context.noStudyDay === true ? "なし（計画修正のみ）" : "あり"}`,
     `日全体メモ：${valueOrNone(context.dailyNote)}`,
+    "",
+    "【本日のAnki実施報告】",
+    `状態：${ankiReportLabel(record.ankiReport?.status)}`,
+    `完了したknowledge_id・カード：${valueOrNone(record.ankiReport?.completedItems)}`,
+    `未完了・保留：${valueOrNone(record.ankiReport?.pendingItems)}`,
+    `補足：${valueOrNone(record.ankiReport?.notes)}`,
+    "",
+    "【週次レビュー入力】",
+    ...weeklySnapshotLogLines(record),
     "",
     "【次回学習条件】",
     `次回計画対象日：${record.planTargetDate}`,
@@ -637,6 +719,10 @@ export function generateLog(record) {
     "・同じ問題セットを、通常ブロックと混合問題の両方へ重複記載しない。",
     "・高確信誤答、安全課題、口頭再生△・×を優先して弱点・復習予定へ反映する。",
     "・欠損知識、高確信誤答、口頭再生△・×から、利用者設定に従って適切な定着方法を判断する。Anki使用者ではExcel内の06_Anki管理を照合する。",
+    "・本日のAnki実施報告が『すべて完了』なら、06_Anki管理で当該日に作成・修正指示された対象を照合し、利用者の実施報告と一意に対応できる行だけを作成済み／修正済みへ更新する。対応が曖昧なら推測せず確認する。",
+    "・『一部だけ完了』では、明示されたknowledge_idまたはFrontだけを完了更新し、未記載カードを完了扱いにしない。案提示、作成指示、閲覧だけを作成済みとしない。",
+    "・QB科目別スナップショットの○・△・×はQB画面上の累積値であり、日次ログの6分類を上書きしない。週次レビュー時は前回スナップショットとの差分を計算する。",
+    "・週次レビュー入力がある場合は、10_週次レビューへ科目別スナップショットを追加し、Excelの直近7日実績、各科目進捗、未解消安全課題、計画完遂率と統合する。",
     "",
     "【日時・重複処理規則】",
     `・すべての学習ブロックを学習日${record.studyDate}の実績として処理する。`,
@@ -679,6 +765,9 @@ export function generateLog(record) {
     "・高確信誤答と安全課題を最優先で処理する。",
     "・口頭再生課題、定着方法、復習時期、次に行う科目・分野・問題数、地図化レベルと目的別学習プロトコルを決定する。",
     "・07_日別スケジュールS列『主要目的プロトコル』へ、その日の最優先ブロックの主目的を記録する。",
+    "・週次レビューでは、前回比、直近7日と14日の実績ペース、目標日までの残日数、必要ペース、基準・保守・上振れの到達見込みを示す。架空の精密確率を作らず、前提と削減候補を明示する。",
+    "・科目別に、演習量、QB○△×の構成と増分、1周目残数、分野状態、重大弱点を説明し、順調・要修正・高リスクへ分類する。",
+    "・週次レビューは報告だけで終えず、現在の学習法を最短合格の観点から批判的に監査し、継続・停止・変更する行動、次の7日間の配分、今後1～3日の具体策を提示する。利用者の相談事項へ理由付きで回答する。",
     "・処理後の回答では、形成・補修・安全課題は詳細に、維持は簡潔にし、成功時と失敗時の分岐までそのまま実行できる粒度で書く。",
     "・学習空白日や計画遅延があれば、絶対日付に基づいて残り計画を再配分する。"
   );

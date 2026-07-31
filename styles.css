@@ -229,3 +229,21 @@ summary { cursor: pointer; font-weight: 800; color: var(--blue); padding: 8px 0;
 
 .check-label { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
 .check-label input { width: auto; min-width: 20px; min-height: 20px; }
+
+
+/* v0.5.0: Anki実施報告・週次レビュー */
+.anki-report-card textarea { min-height: 64px; }
+.weekly-review-details { margin-top: 14px; }
+.weekly-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.weekly-table { width: 100%; border-collapse: collapse; min-width: 460px; background: var(--surface); }
+.weekly-table th, .weekly-table td { border-bottom: 1px solid var(--border); padding: 8px; text-align: center; }
+.weekly-table thead th { position: sticky; top: 0; background: var(--surface-soft); z-index: 1; }
+.weekly-table tbody th { text-align: left; white-space: nowrap; }
+.weekly-table input { min-width: 64px; width: 76px; text-align: right; padding: 8px; }
+.weekly-total { font-weight: 700; min-width: 60px; }
+.weekly-review-card .subsection-heading { margin-top: 14px; }
+@media (max-width: 680px) {
+  .weekly-review-card .form-grid { grid-template-columns: 1fr; }
+  .weekly-table th, .weekly-table td { padding: 6px; }
+  .weekly-table input { width: 62px; min-width: 54px; }
+}

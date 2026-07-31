@@ -19,7 +19,7 @@
   <header class="app-header">
     <div>
       <p class="eyebrow" id="exam-name">医師国家試験 Pro</p>
-      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.4.5</small></h1>
+      <h1>国試AI学習ログ <small id="app-version" class="app-version">v0.5.0</small></h1>
     </div>
     <span id="status-chip" class="status-chip">未開始</span>
   </header>
@@ -113,6 +113,21 @@
         <label>計画変更・学習できなかった理由など<textarea id="daily-note" rows="2" placeholder="必要な場合だけ入力してください（任意）"></textarea></label>
       </section>
 
+
+      <section class="card anki-report-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">実施報告</p>
+            <h2>本日のAnki作成・修正</h2>
+          </div>
+        </div>
+        <p class="hint">AIが前回指示したカードの作成・修正を実際に終えた場合だけ報告します。案を見ただけでは作成済みにしません。</p>
+        <label>本日のAnki操作状況<select id="anki-report-status"></select></label>
+        <label>完了したknowledge_id・カードFront<textarea id="anki-completed-items" rows="3" placeholder="1行1件。例：K-20260728-0001&#10;甲状腺クリーゼでのヒドロコルチゾン投与時期"></textarea></label>
+        <label>未完了・保留したカード<textarea id="anki-pending-items" rows="2" placeholder="一部完了・未完了の場合に、knowledge_id、Front、理由を記録"></textarea></label>
+        <label>補足<textarea id="anki-report-notes" rows="2" placeholder="既存カードを修正した、AnkiノートIDを確認した等（任意）"></textarea></label>
+      </section>
+
       <section class="card">
         <div class="section-heading">
           <div>
@@ -162,6 +177,42 @@
         <label>確実に学習へ使える時間帯<textarea id="confirmed-study-windows" rows="3" placeholder="例：10:00〜12:00&#10;14:00〜18:00&#10;20:00〜23:00"></textarea></label>
         <label>追加で使える可能性がある時間帯<textarea id="optional-study-windows" rows="2" placeholder="例：08:00〜10:00（使えなくても遅延扱いにしない）"></textarea></label>
         <label>固定予定・学習上の制約<textarea id="fixed-constraints" rows="3" placeholder="例：13:00〜14:00 病院&#10;19:00〜20:00 夕食&#10;移動中は口頭再生のみ可"></textarea></label>
+      </section>
+
+
+      <section class="card weekly-review-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">週1回</p>
+            <h2>週次レビュー・学習指導</h2>
+          </div>
+        </div>
+        <label class="check-label"><input id="weekly-review-enabled" type="checkbox">今回のログで週次レビューも実施する</label>
+        <p class="hint">Excelの7日間実績と、現在のQB上の○・△・×を統合し、模試・本試験への到達予測と学習法の改善を依頼します。</p>
+        <div id="weekly-review-details" class="weekly-review-details hidden">
+          <div class="form-grid">
+            <label>レビュー基準日<input id="weekly-review-date" type="date"></label>
+            <label>目標・模試日の変更<textarea id="weekly-goal-update" rows="2" placeholder="Excel記載から変更がある場合だけ入力"></textarea></label>
+          </div>
+          <label>今週の状況・制約・AIと相談したいこと<textarea id="weekly-consultation-notes" rows="4" placeholder="例：形成に時間がかかる、計画未完了が続いた、模試までに優先順位を再検討したい"></textarea></label>
+          <div class="section-heading subsection-heading">
+            <div>
+              <h3>QB科目別スナップショット</h3>
+              <p class="hint">QB画面の累積○・△・×を入力します。日次ログの6分類とは別情報です。</p>
+            </div>
+            <div class="button-row compact">
+              <button id="weekly-fill-zero" class="ghost" type="button">未入力を0にする</button>
+              <button id="weekly-clear" class="ghost" type="button">全数値をクリア</button>
+            </div>
+          </div>
+          <div class="weekly-table-wrap">
+            <table class="weekly-table">
+              <thead><tr><th>科目</th><th>○</th><th>△</th><th>×</th><th>合計</th></tr></thead>
+              <tbody id="weekly-subject-snapshot"></tbody>
+            </table>
+          </div>
+          <p id="weekly-review-validation" class="validation-message warning">週次レビューを有効にした場合は、全科目の○・△・×を入力してください。</p>
+        </div>
       </section>
 
       <section class="card">

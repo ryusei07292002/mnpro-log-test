@@ -64,6 +64,12 @@ const elements = {
   blocks: $("#blocks"), blocksEmpty: $("#blocks-empty"), addBlock: $("#add-block"),
   quickNoteType: $("#quick-note-type"), quickNoteText: $("#quick-note-text"), addQuickNote: $("#add-quick-note"), quickNotes: $("#quick-notes"),
   noStudyDay: $("#no-study-day"), dailyNote: $("#daily-note"),
+  ankiReportStatus: $("#anki-report-status"), ankiCompletedItems: $("#anki-completed-items"),
+  ankiPendingItems: $("#anki-pending-items"), ankiReportNotes: $("#anki-report-notes"),
+  weeklyReviewEnabled: $("#weekly-review-enabled"), weeklyReviewDetails: $("#weekly-review-details"),
+  weeklyReviewDate: $("#weekly-review-date"), weeklyGoalUpdate: $("#weekly-goal-update"),
+  weeklyConsultationNotes: $("#weekly-consultation-notes"), weeklySubjectSnapshot: $("#weekly-subject-snapshot"),
+  weeklyFillZero: $("#weekly-fill-zero"), weeklyClear: $("#weekly-clear"), weeklyReviewValidation: $("#weekly-review-validation"),
   planTargetDate: $("#plan-target-date"), confirmedStudyWindows: $("#confirmed-study-windows"),
   optionalStudyWindows: $("#optional-study-windows"), fixedConstraints: $("#fixed-constraints"),
   bedtimePreparationStart: $("#bedtime-preparation-start"),
@@ -248,6 +254,15 @@ function render() {
   elements.planTargetDate.value = record.planTargetDate || addDays(record.studyDate, 1);
   elements.noStudyDay.checked = record.dailyContext?.noStudyDay === true;
   elements.dailyNote.value = record.dailyContext.dailyNote ?? "";
+  elements.ankiReportStatus.value = record.ankiReport?.status ?? "no-instruction";
+  elements.ankiCompletedItems.value = record.ankiReport?.completedItems ?? "";
+  elements.ankiPendingItems.value = record.ankiReport?.pendingItems ?? "";
+  elements.ankiReportNotes.value = record.ankiReport?.notes ?? "";
+  elements.weeklyReviewEnabled.checked = record.weeklyReview?.enabled === true;
+  elements.weeklyReviewDate.value = record.weeklyReview?.reviewDate || record.studyDate;
+  elements.weeklyGoalUpdate.value = record.weeklyReview?.goalUpdate ?? "";
+  elements.weeklyConsultationNotes.value = record.weeklyReview?.consultationNotes ?? "";
+  renderWeeklyReview();
   elements.confirmedStudyWindows.value = record.nextPlanConditions?.confirmedStudyWindows ?? "";
   elements.optionalStudyWindows.value = record.nextPlanConditions?.optionalStudyWindows ?? "";
   elements.fixedConstraints.value = record.nextPlanConditions?.fixedConstraints ?? "";
@@ -272,7 +287,9 @@ function render() {
 
   const isFinalized = record.status === "finalized";
   [elements.addBlock, elements.addQuickNote, elements.quickNoteText, elements.quickNoteType,
-    elements.noStudyDay, elements.dailyNote, elements.planTargetDate, elements.confirmedStudyWindows, elements.optionalStudyWindows,
+    elements.noStudyDay, elements.dailyNote, elements.ankiReportStatus, elements.ankiCompletedItems, elements.ankiPendingItems, elements.ankiReportNotes,
+    elements.weeklyReviewEnabled, elements.weeklyReviewDate, elements.weeklyGoalUpdate, elements.weeklyConsultationNotes, elements.weeklyFillZero, elements.weeklyClear,
+    elements.planTargetDate, elements.confirmedStudyWindows, elements.optionalStudyWindows,
     elements.fixedConstraints, elements.bedtimePreparationStart, elements.finalizeRecord]
     .forEach((element) => { element.disabled = isFinalized; });
   elements.reopenRecord.classList.toggle("hidden", !isFinalized);
@@ -286,6 +303,82 @@ function render() {
     generatedLog = "";
     elements.generatedLog.value = "";
   }
+}
+
+function weeklyValue(value) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function renderWeeklyReview() {
+  if (!record) return;
+  const weekly = record.weeklyReview ?? {};
+  elements.weeklyReviewDetails.classList.toggle("hidden", weekly.enabled !== true);
+  elements.weeklySubjectSnapshot.innerHTML = "";
+  (weekly.subjectSnapshots ?? []).forEach((item) => {
+    const row = document.createElement("tr");
+    row.dataset.subjectId = item.subjectId;
+    const values = [item.correct, item.uncertain, item.wrong];
+    const complete = values.every((value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)));
+    const total = complete ? values.reduce((sum, value) => sum + Number(value), 0) : "—";
+    row.innerHTML = `
+      <th scope="row">${escapeHtml(item.subjectName)}</th>
+      <td><input data-weekly-field="correct" type="number" inputmode="numeric" min="0" step="1" value="${escapeHtml(weeklyValue(item.correct))}" aria-label="${escapeHtml(item.subjectName)} ○"></td>
+      <td><input data-weekly-field="uncertain" type="number" inputmode="numeric" min="0" step="1" value="${escapeHtml(weeklyValue(item.uncertain))}" aria-label="${escapeHtml(item.subjectName)} △"></td>
+      <td><input data-weekly-field="wrong" type="number" inputmode="numeric" min="0" step="1" value="${escapeHtml(weeklyValue(item.wrong))}" aria-label="${escapeHtml(item.subjectName)} ×"></td>
+      <td class="weekly-total">${total}</td>`;
+    row.querySelectorAll("input").forEach((input) => {
+      input.disabled = record.status === "finalized";
+      input.addEventListener("input", () => {
+        const target = record.weeklyReview.subjectSnapshots.find((entry) => entry.subjectId === item.subjectId);
+        target[input.dataset.weeklyField] = input.value === "" ? null : Number(input.value);
+        saveRecord();
+        const vals = [target.correct, target.uncertain, target.wrong];
+        row.querySelector(".weekly-total").textContent = vals.every((value) => value !== null && Number.isFinite(Number(value)))
+          ? vals.reduce((sum, value) => sum + Number(value), 0) : "—";
+        updateWeeklyValidation();
+      });
+    });
+    elements.weeklySubjectSnapshot.appendChild(row);
+  });
+  updateWeeklyValidation();
+}
+
+function weeklyReviewErrors() {
+  if (record?.weeklyReview?.enabled !== true) return [];
+  const errors = [];
+  if (!record.weeklyReview.reviewDate) errors.push("週次レビュー基準日を入力してください。");
+  (record.weeklyReview.subjectSnapshots ?? []).forEach((item) => {
+    for (const [key, label] of [["correct", "○"], ["uncertain", "△"], ["wrong", "×"]]) {
+      const value = item[key];
+      if (value === null || value === undefined || value === "") errors.push(`${item.subjectName}の${label}が未入力です。`);
+      else if (!Number.isInteger(Number(value)) || Number(value) < 0) errors.push(`${item.subjectName}の${label}は0以上の整数にしてください。`);
+    }
+  });
+  return errors;
+}
+
+function updateWeeklyValidation() {
+  if (!record?.weeklyReview?.enabled) {
+    elements.weeklyReviewValidation.className = "validation-message warning";
+    elements.weeklyReviewValidation.textContent = "週次レビューを有効にすると、科目別QBスナップショットを送信できます。";
+    return;
+  }
+  const errors = weeklyReviewErrors();
+  if (errors.length) {
+    elements.weeklyReviewValidation.className = "validation-message warning";
+    elements.weeklyReviewValidation.textContent = `未入力または不正な値が${errors.length}件あります。`;
+  } else {
+    elements.weeklyReviewValidation.className = "validation-message ok";
+    elements.weeklyReviewValidation.textContent = "全科目のQBスナップショットを入力済みです。";
+  }
+}
+
+function ankiReportErrors() {
+  const status = record?.ankiReport?.status ?? "no-instruction";
+  if (status === "partial" && !String(record.ankiReport.completedItems ?? "").trim()) {
+    return ["Ankiが一部完了の場合は、完了したknowledge_idまたはカードFrontを入力してください。"];
+  }
+  return [];
 }
 
 function renderSummary() {
@@ -719,7 +812,7 @@ function finalizeCurrentRecord() {
   if (record.dailyContext?.noStudyDay !== true && record.blocks.length === 0 && record.quickNotes.length === 0) {
     return showToast("学習ブロックまたはメモを1件以上追加するか、『本日は学習なし』を選択してください。");
   }
-  const errors = validateAllBlocks();
+  const errors = [...validateAllBlocks(), ...ankiReportErrors(), ...weeklyReviewErrors()];
   if (errors.length) return alert(`確定できません。\n\n${errors.join("\n")}`);
   const warnings = duplicateUnitWarnings();
   if (warnings.length && !confirm(`${warnings.join("\n")}\n\nこのまま確定しますか？`)) return;
@@ -872,6 +965,51 @@ function bindDailyContext() {
   });
 }
 
+function bindAnkiReport() {
+  const bindings = [
+    [elements.ankiReportStatus, "status", "change"],
+    [elements.ankiCompletedItems, "completedItems", "input"],
+    [elements.ankiPendingItems, "pendingItems", "input"],
+    [elements.ankiReportNotes, "notes", "input"]
+  ];
+  bindings.forEach(([element, key, eventName]) => element.addEventListener(eventName, () => {
+    if (!record) return;
+    record.ankiReport ??= {};
+    record.ankiReport[key] = element.value;
+    saveRecord();
+  }));
+}
+
+function bindWeeklyReview() {
+  elements.weeklyReviewEnabled.addEventListener("change", () => {
+    if (!record) return;
+    record.weeklyReview.enabled = elements.weeklyReviewEnabled.checked;
+    if (!record.weeklyReview.reviewDate) record.weeklyReview.reviewDate = record.studyDate;
+    saveRecord();
+    renderWeeklyReview();
+  });
+  elements.weeklyReviewDate.addEventListener("change", () => {
+    record.weeklyReview.reviewDate = elements.weeklyReviewDate.value; saveRecord(); updateWeeklyValidation();
+  });
+  elements.weeklyGoalUpdate.addEventListener("input", () => {
+    record.weeklyReview.goalUpdate = elements.weeklyGoalUpdate.value; saveRecord();
+  });
+  elements.weeklyConsultationNotes.addEventListener("input", () => {
+    record.weeklyReview.consultationNotes = elements.weeklyConsultationNotes.value; saveRecord();
+  });
+  elements.weeklyFillZero.addEventListener("click", () => {
+    record.weeklyReview.subjectSnapshots.forEach((item) => {
+      for (const key of ["correct", "uncertain", "wrong"]) if (item[key] === null || item[key] === undefined || item[key] === "") item[key] = 0;
+    });
+    saveRecord({ snapshotBefore: true }); renderWeeklyReview(); showToast("未入力値を0にしました。");
+  });
+  elements.weeklyClear.addEventListener("click", () => {
+    if (!confirm("週次レビューの全科目○・△・×をクリアしますか？")) return;
+    record.weeklyReview.subjectSnapshots.forEach((item) => { item.correct = null; item.uncertain = null; item.wrong = null; });
+    saveRecord({ snapshotBefore: true }); renderWeeklyReview();
+  });
+}
+
 function bindNextPlanConditions() {
   const bindings = [
     [elements.confirmedStudyWindows, "confirmedStudyWindows"],
@@ -950,6 +1088,7 @@ function bindInstallEvents() {
 function init() {
   checkStorageAvailability();
   elements.quickNoteType.innerHTML = options(EXAM_CONFIG.quickNoteTypes, EXAM_CONFIG.quickNoteTypes[0], false);
+  elements.ankiReportStatus.innerHTML = options(EXAM_CONFIG.ankiReportStatuses, "no-instruction", false);
   elements.startRecord.addEventListener("click", () => {
     const studyDate = elements.newStudyDate.value;
     if (!studyDate) return;
@@ -961,6 +1100,8 @@ function init() {
   elements.addBlock.addEventListener("click", addBlock);
   elements.addQuickNote.addEventListener("click", addQuickNote);
   bindDailyContext();
+  bindAnkiReport();
+  bindWeeklyReview();
   bindNextPlanConditions();
   elements.planTargetDate.addEventListener("change", () => {
     if (!record) return;
